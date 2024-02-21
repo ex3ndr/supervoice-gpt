@@ -25,13 +25,13 @@ mfa validate "$PWD/datasets/eval-prepared" english_us_mfa english_mfa "$PWD/data
 mfa align "$PWD/datasets/eval-prepared" english_us_mfa english_mfa "$PWD/datasets/eval-aligned" -t "$PWD/.mfa/" -j 16
 
 # Process Common Voice EN
-# mfa validate "$PWD/datasets/common-voice-en-prepared" english_us_mfa english_mfa -t "$PWD/.mfa/" -j 16
-# mfa align "$PWD/datasets/common-voice-en-prepared" english_us_mfa english_mfa "$PWD/datasets/common-voice-en-aligned" -t "$PWD/.mfa/" -j 16
+mfa validate "$PWD/datasets/common-voice-en-prepared" english_us_mfa english_mfa -t "$PWD/.mfa/" -j 16 --clean
+mfa align "$PWD/datasets/common-voice-en-prepared" english_us_mfa english_mfa "$PWD/datasets/common-voice-en-aligned" -t "$PWD/.mfa/" -j 16
 
 # Process Common Voice RU
-# mfa validate "$PWD/datasets/common-voice-ru-prepared" russian_mfa russian_mfa -t "$PWD/.mfa/" -j 16
-# mfa align "$PWD/datasets/common-voice-ru-prepared" russian_mfa russian_mfa "$PWD/datasets/common-voice-ru-aligned" -t "$PWD/.mfa/" -j 16 --clean
+mfa validate "$PWD/datasets/common-voice-ru-prepared" russian_mfa russian_mfa -t "$PWD/.mfa/" -j 16 --clean
+mfa align "$PWD/datasets/common-voice-ru-prepared" russian_mfa russian_mfa "$PWD/datasets/common-voice-ru-aligned" -t "$PWD/.mfa/" -j 16
 
 # Process Common Voice UK
-# mfa validate "$PWD/datasets/common-voice-uk-prepared" ukrainian_mfa ukrainian_mfa -t "$PWD/.mfa/" -j 16
-# mfa align "$PWD/datasets/common-voice-uk-prepared" ukrainian_mfa ukrainian_mfa "$PWD/datasets/common-voice-uk-aligned" -t "$PWD/.mfa/" -j 16 --clean
+mfa validate "$PWD/datasets/common-voice-uk-prepared" ukrainian_mfa ukrainian_mfa -t "$PWD/.mfa/" -j 16 --clean
+mfa align "$PWD/datasets/common-voice-uk-prepared" ukrainian_mfa ukrainian_mfa "$PWD/datasets/common-voice-uk-aligned" -t "$PWD/.mfa/" -j 16

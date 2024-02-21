@@ -35,9 +35,10 @@ def speaker_directory(speaker):
     return str(speaker).zfill(8)
 
 def execute_parallel(args):
+    process_id = multiprocessing.current_process()._identity[0]
     files, collection_dir, index = args
     file, text, speaker = files[index]
-    device = "cuda:" + str(index % torch.cuda.device_count())
+    device = "cuda:" + str(process_id % torch.cuda.device_count())
 
     # Format filename from index (e.g. 000001)
     target_name = str(index).zfill(8)
@@ -159,7 +160,7 @@ def load_common_voice_corpus(path):
 
     # Load CSV
     with open(path + "/train.tsv") as f:
-        reader = csv.reader(f, delimiter="\t")
+        reader = csv.reader(f, delimiter="\t", quotechar=None)
         next(reader) # Skip header
         data = list(reader)
 
