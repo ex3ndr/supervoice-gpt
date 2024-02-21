@@ -64,6 +64,7 @@ class Tokenizer:
 
         # Map
         self.token_to_id = {token: i for i, token in enumerate(self.all_tokens)}
+        self.id_to_token = {i: token for i, token in enumerate(self.all_tokens)}
 
         # Add mapped keys
         for key, value in mapped_keys.items():
@@ -82,6 +83,9 @@ class Tokenizer:
 
     def normalize(self, tokens):
         return [mapped_keys[token] if token in mapped_keys else token for token in tokens if token not in ignored]
+
+    def reverse(self, tokens):
+        return [self.id_to_token[token] for token in tokens]
 
     def __call__(self, tokens, force = False):
         if force:

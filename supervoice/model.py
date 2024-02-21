@@ -8,6 +8,7 @@ class SupervoiceGPT(torch.nn.Module):
         self.config = config
         self.n_special_tokens = 9
         self.n_tokens = self.n_special_tokens + len(config.tokenizer.phonemes) + len(config.tokenizer.input_tokens)
+        self.n_generate_tokens = self.n_special_tokens + len(config.tokenizer.phonemes)
 
         # Input embedding
         self.input_embedding = torch.nn.Embedding(self.n_tokens, self.config.gpt.n_dim)
@@ -51,3 +52,40 @@ class SupervoiceGPT(torch.nn.Module):
             return x, loss
 
         return x
+
+    @torch.no_grad()
+    def generate(self, input, max_new_tokens, temperature=1.0, top_k=None, stop_tokens = None, deterministic = False):
+        ctx = input
+        for _ in range(max_new_tokens):
+            
+            # Forward the model to get the logits for the index in the sequence
+            logits = self(ctx)
+            
+            # Pluck the logits at the final step and scale by desired temperature
+            logits = logits[:, -1, :] / temperature
+
+            # Truncate the logits to only having generate tokens
+            logits = logits[:, :self.n_generate_tokens]
+            
+            # Optionally crop the logits to only the top k options
+            if top_k is not None:
+                v, _ = torch.topk(logits, min(top_k, logits.size(-1)))
+                logits[logits < v[:, [-1]]] = -float('Inf')
+            
+            # Apply softmax to convert logits to (normalized) probabilities
+            probs = F.softmax(logits, dim=-1)
+            
+            # Sample from the distribution
+            if deterministic:
+                idx_next = torch.argmax(probs, dim=-1, keepdim=True)
+            else:
+                idx_next = torch.multinomial(probs, num_samples=1)
+            
+            # Append Context
+            ctx = torch.cat((ctx, idx_next), dim=1)
+
+            # Stop Tokens
+            if idx_next in stop_tokens:
+                break
+
+        return ctx

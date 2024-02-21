@@ -34,7 +34,7 @@ from supervoice.tokenizer import Tokenizer
 train_experiment = "gpt_first"
 train_project="supervoice-gpt"
 train_auto_resume = True
-train_batch_size = 16 # Per GPU
+train_batch_size = 48 # Per GPU
 train_sequence_length = 2048
 train_grad_accum_every = 8
 train_steps = 600000

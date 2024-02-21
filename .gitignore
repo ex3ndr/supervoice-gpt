@@ -3,3 +3,5 @@ external_datasets
 __pycache__
 .mfa
 wandb
+output
+.ipynb_checkpoints
