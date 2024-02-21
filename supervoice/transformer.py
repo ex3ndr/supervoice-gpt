@@ -18,7 +18,7 @@ class Transformer(nn.Module):
         ffn_dropout,
         position_embedding = 'alibi', # or rotary
         enable_skip_connections = True,
-        causal = False,
+        casual = False,
     ):
         super(Transformer, self).__init__()
         self.n_layers = n_layers
@@ -139,7 +139,7 @@ class AttentionBlock(torch.nn.Module):
 
     def forward(self, x, alibi = None, rotational = None):
 
-        B, T, C = x.size() # batch size, sequence length, context width
+        B, T, C = x.size() # batch size, sequence length
 
         # Residual
         residual = x

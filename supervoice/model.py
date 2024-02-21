@@ -1,16 +1,17 @@
 import torch
 from torch.nn import functional as F
+from .transformer import Transformer
 
 class SupervoiceGPT(torch.nn.Module):
     def __init__(self, config):
         super(SupervoiceGPT, self).__init__()
         self.config = config
         self.n_special_tokens = 9
-        self.n_input_tokens = len(config.tokenizer.input_tokens) + len(config.tokenizer.phonemes) + self.n_special_tokens
-        self.n_output_tokens = len(config.tokenizer.phonemes) + self.n_special_tokens
+        self.n_tokens = self.n_special_tokens + len(config.tokenizer.phonemes) + len(config.tokenizer.input_tokens)
 
         # Input embedding
-        self.input_embedding = torch.nn.Embedding(self.n_input_tokens, self.config.gpt.n_dim)
+        self.input_embedding = torch.nn.Embedding(self.n_tokens, self.config.gpt.n_dim)
+        torch.nn.init.normal_(self.input_embedding.weight, mean=0.0, std=0.02)
 
         # Transformer
         self.transformer = Transformer(
@@ -27,13 +28,10 @@ class SupervoiceGPT(torch.nn.Module):
         )
 
         # Prediction head
-        # NOTE: No weight tying since we have a very different token sets for input and output
-        self.prediction_head = torch.nn.Linear(self.config.n_dim, self.n_output_tokens)
+        self.prediction_head = torch.nn.Linear(self.config.gpt.n_dim, self.n_tokens, bias=False)
 
-        # Init weights
-        torch.nn.init.normal_(self.input_embedding.weight, mean=0.0, std=0.02)
-        torch.nn.init.normal_(self.prediction_head.weight, mean=0.0, std=0.02)
-        torch.nn.init.zeros_(self.prediction_head.bias)
+        # Weight sharing
+        self.input_embedding.weight = self.prediction_head.weight
 
     def forward(self, x, target = None):
 
@@ -48,8 +46,8 @@ class SupervoiceGPT(torch.nn.Module):
 
         # If target is not None, compute loss
         if target is not None:
-            # Compute loss
-            loss = F.cross_entropy(x, target, ignore_index = 0) # Zero token is a padding token
+            # Compute loss over flatten batches and sequences
+            loss = F.cross_entropy(x.view(-1, x.size(-1)), target.view(-1), ignore_index = 0) # Zero token is a padding token
             return x, loss
 
         return x

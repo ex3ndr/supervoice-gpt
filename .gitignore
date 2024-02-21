@@ -2,3 +2,4 @@ datasets
 external_datasets
 __pycache__
 .mfa
+wandb
