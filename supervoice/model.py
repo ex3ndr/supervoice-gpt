@@ -6,9 +6,7 @@ class SupervoiceGPT(torch.nn.Module):
     def __init__(self, config):
         super(SupervoiceGPT, self).__init__()
         self.config = config
-        self.n_special_tokens = 9
-        self.n_tokens = self.n_special_tokens + len(config.tokenizer.phonemes) + len(config.tokenizer.input_tokens)
-        self.n_generate_tokens = self.n_special_tokens + len(config.tokenizer.phonemes)
+        self.n_tokens = config.tokenizer.vocab_size
 
         # Input embedding
         self.input_embedding = torch.nn.Embedding(self.n_tokens, self.config.gpt.n_dim)
@@ -65,7 +63,7 @@ class SupervoiceGPT(torch.nn.Module):
             logits = logits[:, -1, :] / temperature
 
             # Truncate the logits to only having generate tokens
-            logits = logits[:, :self.n_generate_tokens]
+            # logits = logits[:, :self.n_generate_tokens]
             
             # Optionally crop the logits to only the top k options
             if top_k is not None:
@@ -89,3 +87,19 @@ class SupervoiceGPT(torch.nn.Module):
                 break
 
         return ctx
+
+    def predict_next(self, input, top_k, trim_generated = True):
+
+        # Predict next token
+        logits = self(input.unsqueeze(0)).squeeze(0)
+        logits = logits[-1, :]
+        if trim_generated:
+            logits = logits[:self.n_generate_tokens]
+
+        # Probabilities
+        probs = F.softmax(logits, dim=-1)
+
+        # Get top k
+        probs, indices = torch.topk(probs, top_k)
+        
+        return probs, indices

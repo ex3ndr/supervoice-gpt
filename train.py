@@ -28,13 +28,12 @@ from accelerate.utils import set_seed
 from train_config import config
 from utils.datasets import create_dataset_loader
 from supervoice.model import SupervoiceGPT
-from supervoice.tokenizer import Tokenizer
 
 # Train parameters
-train_experiment = "gpt_first"
+train_experiment = "gpt_new_tokenizer"
 train_project="supervoice-gpt"
 train_auto_resume = True
-train_batch_size = 48 # Per GPU
+train_batch_size = 16 # Per GPU
 train_sequence_length = 2048
 train_grad_accum_every = 8
 train_steps = 600000
@@ -69,7 +68,6 @@ def main():
 
     # Prepare dataset
     accelerator.print("Loading dataset...")
-    tokenizer = Tokenizer(config)
     train_loader = create_dataset_loader("./datasets/train.bin", batch_size = train_batch_size, sequence_length = train_sequence_length, workers = train_loader_workers, dtype = dtype)
 
     # Model
