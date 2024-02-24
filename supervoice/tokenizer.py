@@ -35,7 +35,7 @@ class Tokenizer:
     def encode(self, text):
 
         # Normalize first
-        text = normalize(text)
+        text = normalize(text).lower()
 
         # Encode
         return self.sp.encode(text)
@@ -43,7 +43,7 @@ class Tokenizer:
     def encode_to_str(self, text):
         
         # Normalize first
-        text = normalize(text)
+        text = normalize(text).lower()
 
         # Encode
         return self.sp.encode(text, out_type=str)

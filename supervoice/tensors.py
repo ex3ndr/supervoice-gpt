@@ -43,3 +43,10 @@ def interval_mask(batch_size, length, min_interval, max_interval, probability_al
         start_point = random.randint(0, length - interval_length - 1)
         tensor[i, start_point:start_point + interval_length] = True 
     return tensor
+
+def casual_padded_square_mask(lengths, max_length, device):
+    batch_size = lengths.size(0)
+    mask = torch.zeros(batch_size, max_length, max_length, device = device, dtype = torch.bool)
+    for i in range(batch_size):
+        mask[i, :lengths[i], :lengths[i]] = True
+    return mask
