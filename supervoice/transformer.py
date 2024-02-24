@@ -98,13 +98,11 @@ class TransformerAdvanced(nn.Module):
         ffn_dropout,
 
         # Positional embedding
-        position_embedding = None, # or rotary or 'alibi'
-        alibi_non_bias_tokens = 0,
+        position_embedding = None # or rotary or 'alibi'
     ):
         super().__init__()
         self.n_layers = n_layers
         self.n_heads = n_heads
-        self.n_non_bias_tokens = alibi_non_bias_tokens
 
         # Attention blocks
         self.layers_enc = torch.nn.ModuleList([])
@@ -145,35 +143,40 @@ class TransformerAdvanced(nn.Module):
 
 
     def forward(self, x, y, x_mask = None, y_mask = None):
-        batch, seq_len, *_ = x.shape
+        batch, seq_len_x, *_ = x.shape
+        _, seq_len_y, *_ = y.shape
 
         # Embeddings
-        alibi = None
-        rotational = None
+        alibi_x = None
+        alibi_y = None
+        rotational_x = None
+        rotational_y = None
 
         # Compute ALiBi
         # This computes ALiBi bias mask, excluding non-bias tokens which are expected to be appended to the end of the sequence
         # Inspired by: https://github.com/ofirpress/attention_with_linear_biases/issues/5
         if self.position_embedding == 'alibi':
-            alibi = get_alibi_mask(seq_len - self.n_non_bias_tokens, self.n_heads, False, x.device)
-            if self.n_non_bias_tokens > 0:
-                alibi = torch.nn.functional.pad(alibi, (0, self.n_non_bias_tokens, 0, self.n_non_bias_tokens), value=0)
+            alibi_x = get_alibi_mask(seq_len_x, self.n_heads, False, x.device)
+            alibi_y = get_alibi_mask(seq_len_y, self.n_heads, False, x.device)
 
         # Compute rotary embeddings
         if self.position_embedding == 'rotary':
-            t = torch.arange(seq_len, device = self.inv_freq.device, dtype = self.inv_freq.dtype)
-            freqs = torch.einsum('i , j -> i j', t, self.inv_freq)
-            rotational =  torch.cat((freqs, freqs), dim = -1)
+            t_x = torch.arange(seq_len_x, device = self.inv_freq.device, dtype = self.inv_freq.dtype)
+            freqs_x = torch.einsum('i , j -> i j', t_x, self.inv_freq)
+            rotational_x =  torch.cat((freqs_x, freqs_x), dim = -1)
+            t_y = torch.arange(seq_len_y, device = self.inv_freq.device, dtype = self.inv_freq.dtype)
+            freqs_y = torch.einsum('i , j -> i j', t_y, self.inv_freq)
+            rotational_y =  torch.cat((freqs_y, freqs_y), dim = -1)
 
         # Run through encoder attention blocks
         encoder_output = x
         for encoder in self.layers_enc:
-            encoder_output = encoder(encoder_output, alibi = alibi, rotational = rotational, mask = x_mask)
+            encoder_output = encoder(encoder_output, alibi = alibi_x, rotational = rotational_x, mask = x_mask)
 
         # Run through decoder attention blocks
         decoder_output = y
         for decoder in self.layers_dec:
-            decoder_output = decoder(decoder_output, encoder_output, alibi = alibi, rotational = rotational, self_mask = y_mask, cross_mask = x_mask)
+            decoder_output = decoder(decoder_output, encoder_output, alibi = alibi_y, rotational = rotational_y, self_mask = y_mask, cross_mask = x_mask)
 
         # Output normalization
         decoder_output = self.output_norm(decoder_output)
@@ -309,6 +312,14 @@ class Attention(torch.nn.Module):
                 target_mask = alibi
 
         # Dot product attention
+        # print(
+        #     q.shape, 
+        #     k.shape,
+        #     v.shape, 
+        #     target_mask.shape if target_mask is not None else None, 
+        #     mask.shape if mask is not None else None,
+        #     alibi.shape if alibi is not None else None,
+        # )
         y = torch.nn.functional.scaled_dot_product_attention(q, k, v, 
             attn_mask = target_mask, 
             dropout_p = self.att_dropout if self.training else 0.0, 

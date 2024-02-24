@@ -78,8 +78,8 @@ class SupervoiceGPT(torch.nn.Module):
 
         # Create output mask for self-attention which is useful for training on variable length sequences
         output_mask = None
-        if input_lengths is not None or output_lengths is not None:
-            input_mask = padded_square_mask(input_lengths, input.size(1), casual = True, device = input.device)
+        if output_lengths is not None:
+            output_mask = padded_square_mask(output_lengths, output.size(1), casual = True, device = input.device)
 
         # Input embeddings
         input_embedded = self.input_embedding(input)

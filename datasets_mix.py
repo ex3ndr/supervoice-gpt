@@ -87,8 +87,8 @@ def format_durations(phonemes):
 def format_durations_compact(phonemes):
     output = []
     for phoneme, duration in phonemes:
-        output += ["(" + phoneme + "," + str(round(duration / config.audio.token_duration)) + ")"]
-    return ",".join(output)
+        output += ["" + phoneme + "," + str(round(duration / config.audio.token_duration)) + ""]
+    return " ".join(output)
 
 def format_tokens(src):
     src = normalize(src)
