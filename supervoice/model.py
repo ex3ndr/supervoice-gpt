@@ -14,16 +14,23 @@ class SupervoiceGPT(torch.nn.Module):
 
         # Transformer
         self.transformer = Transformer(
+
+            # Architecture
             n_heads = self.config.gpt.n_heads,
             n_layers = self.config.gpt.n_layers,
             n_dim = self.config.gpt.n_dim,
             n_dim_head = self.config.gpt.n_dim_head,
             n_dim_ffn = self.config.gpt.n_dim_ffn,
-            n_non_bias_tokens = 0,
-            enable_skip_connections = False,
+
+            # Masking
             casual = True,
+
+            # Dropout
             att_dropout = 0,
-            ffn_dropout = 0.1
+            ffn_dropout = 0.1,
+
+            # Positional embedding
+            position_embedding = 'alibi'
         )
 
         # Prediction head
@@ -46,7 +53,7 @@ class SupervoiceGPT(torch.nn.Module):
         # If target is not None, compute loss
         if target is not None:
             # Compute loss over flatten batches and sequences
-            loss = F.cross_entropy(x.view(-1, x.size(-1)), target.view(-1), ignore_index = 0) # Zero token is a padding token
+            loss = F.cross_entropy(x.view(-1, x.size(-1)), target.view(-1), ignore_index = -1) # We expect -1 to be a mask value that excludes loss
             return x, loss
 
         return x

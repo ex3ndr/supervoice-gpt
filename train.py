@@ -30,7 +30,7 @@ from utils.datasets import create_dataset_loader
 from supervoice.model import SupervoiceGPT
 
 # Train parameters
-train_experiment = "gpt_new_tokenizer"
+train_experiment = "gpt_new_tokenizer_2"
 train_project="supervoice-gpt"
 train_auto_resume = True
 train_batch_size = 16 # Per GPU

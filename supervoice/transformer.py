@@ -13,18 +13,16 @@ class Transformer(nn.Module):
         n_dim,
         n_dim_head,
         n_dim_ffn,
-        n_non_bias_tokens,
         att_dropout, 
         ffn_dropout,
-        position_embedding = 'alibi', # or rotary
-        enable_skip_connections = True,
+        position_embedding = None, # or rotary or 'alibi'
+        alibi_non_bias_tokens = 0,
         casual = False,
     ):
         super(Transformer, self).__init__()
         self.n_layers = n_layers
         self.n_heads = n_heads
-        self.n_non_bias_tokens = n_non_bias_tokens
-        self.enable_skip_connections = enable_skip_connections
+        self.n_non_bias_tokens = alibi_non_bias_tokens
         self.casual = casual
 
         # Attention blocks
@@ -40,12 +38,6 @@ class Transformer(nn.Module):
                 casual = casual
             ))
         
-        # Skip connections
-        self.skip_combiners = torch.nn.ModuleList([])
-        if enable_skip_connections:
-            for i in range(n_layers//2):
-                self.skip_combiners.append(torch.nn.Linear(n_dim * 2, n_dim))
-
         # Output normalization
         self.output_norm = RMSNorm(n_dim)
 
@@ -56,6 +48,8 @@ class Transformer(nn.Module):
         elif position_embedding == 'rotary':
             theta = 50000
             self.register_buffer('inv_freq', 1.0 / (theta ** (torch.arange(0, n_dim_head, 2).float() / n_dim)))
+        elif position_embedding is None:
+            pass
         else:
             raise ValueError(f"Unknown position embedding: {position_embedding}")
 
@@ -82,21 +76,8 @@ class Transformer(nn.Module):
             rotational =  torch.cat((freqs, freqs), dim = -1)
 
         # Run through attention blocks
-        connections = []
         for i in range(self.n_layers):
-
-            # Skip connection
-            if self.n_layers - (self.n_layers // 2) < i and self.enable_skip_connections:
-                s = connections.pop()
-                x = torch.cat([x, s], dim = -1)
-                x = self.skip_combiners[i - (self.n_layers // 2)](x)
-
-            # Attention
             x = self.layers[i](x, alibi = alibi, rotational = rotational)
-
-            # Skip connection
-            if i <= self.n_layers // 2:
-                connections.append(x)
 
         # Output normalization
         x = self.output_norm(x)
@@ -104,6 +85,104 @@ class Transformer(nn.Module):
         # Result
         return x
 
+class TransformerAdvanced(nn.Module):
+    def __init__(self, 
+
+        # Architecture
+        n_heads,
+        n_layers,
+        n_dim,
+        n_dim_head,
+        n_dim_ffn,
+        att_dropout, 
+        ffn_dropout,
+
+        # Positional embedding
+        position_embedding = None, # or rotary or 'alibi'
+        alibi_non_bias_tokens = 0,
+    ):
+        super(TransformerAdvanced, self).__init__()
+        self.n_layers = n_layers
+        self.n_heads = n_heads
+        self.n_non_bias_tokens = alibi_non_bias_tokens
+        self.casual = casual
+
+        # Attention blocks
+        self.layers_enc = torch.nn.ModuleList([])
+        self.layers_dec = torch.nn.ModuleList([])
+        for i in range(n_layers):
+            self.layers_enc.append(AttentionBlock(
+                n_heads = n_heads, 
+                n_dim = n_dim, 
+                n_dim_head = n_dim_head, 
+                n_dim_ffn = n_dim_ffn,
+                att_dropout = att_dropout,
+                ffn_dropout = ffn_dropout,
+                casual = false
+            ))
+            self.layers_dec.append(AttentionBlockAdvanced(
+                n_heads = n_heads, 
+                n_dim = n_dim, 
+                n_dim_head = n_dim_head, 
+                n_dim_ffn = n_dim_ffn,
+                att_dropout = att_dropout,
+                ffn_dropout = ffn_dropout
+            ))
+        
+        # Output normalization
+        self.output_norm = RMSNorm(n_dim)
+
+        # Positional embedding
+        self.position_embedding = position_embedding
+        if position_embedding == 'alibi':
+            pass
+        elif position_embedding == 'rotary':
+            theta = 50000
+            self.register_buffer('inv_freq', 1.0 / (theta ** (torch.arange(0, n_dim_head, 2).float() / n_dim)))
+        elif position_embedding is None:
+            pass
+        else:
+            raise ValueError(f"Unknown position embedding: {position_embedding}")
+
+
+    def forward(self, x, y):
+        batch, seq_len, *_ = x.shape
+
+        # Embeddings
+        alibi = None
+        rotational = None
+
+        # Compute ALiBi
+        # This computes ALiBi bias mask, excluding non-bias tokens which are expected to be appended to the end of the sequence
+        # Inspired by: https://github.com/ofirpress/attention_with_linear_biases/issues/5
+        if self.position_embedding == 'alibi':
+            alibi = get_alibi_mask(seq_len - self.n_non_bias_tokens, self.n_heads, self.casual, x.device)
+            if self.n_non_bias_tokens > 0:
+                alibi = torch.nn.functional.pad(alibi, (0, self.n_non_bias_tokens, 0, self.n_non_bias_tokens), value=0)
+
+        # Compute rotary embeddings
+        if self.position_embedding == 'rotary':
+            t = torch.arange(seq_len, device = self.inv_freq.device, dtype = self.inv_freq.dtype)
+            freqs = torch.einsum('i , j -> i j', t, self.inv_freq)
+            rotational =  torch.cat((freqs, freqs), dim = -1)
+
+        # Run through encoder attention blocks
+        for i in range(self.layers_enc):
+            x = self.layers[i](x, alibi = alibi, rotational = rotational)
+
+        # Run through decoder attention blocks
+        for i in range(self.layers_dec):
+            x = self.layers[i](x, y, alibi = alibi, rotational = rotational)
+
+        # Output normalization
+        x = self.output_norm(x)
+
+        # Result
+        return x
+
+#
+# Attention Block
+#
 
 class AttentionBlock(torch.nn.Module):
     def __init__(self, n_heads, n_dim, n_dim_head, n_dim_ffn, att_dropout, ffn_dropout, casual):
@@ -114,54 +193,131 @@ class AttentionBlock(torch.nn.Module):
         self.att_dropout = att_dropout
         self.casual = casual
 
-        # Attention input layer norm
+        # Attention
         self.attention_ln = RMSNorm(n_dim)
+        self.attention = Attention(n_heads, n_dim, n_dim_head, att_dropout, casual)
 
-        # Input -> Query/Key/Value for each head in single tensor for speedup
-        self.attention = nn.Linear(n_dim, 3 * n_dim_head * n_heads, bias=False)
-        torch.nn.init.normal_(self.attention.weight, mean=0.0, std=0.02)
+        # MLP part
+        self.mlp_ln = RMSNorm(n_dim)
+        self.mlp = AttentionMLP(n_dim, n_dim_ffn, ffn_dropout)
 
-        # Attention dropout
-        # self.attention_dropout = nn.Dropout(att_dropout)
+    def forward(self, x, alibi = None, rotational = None):
+        B, T, C = x.size() # batch size, sequence length
+
+        # Attention
+        residual = x
+        x = self.attention_ln(x)
+        x_k = x
+        x_q = x
+        x_v = x
+        if y is not None:
+            y = self.attention_ln(y)
+            y_k = y
+            y_q = y
+        x = self.attention(x_q = x_q, x_k = x_k, x_v = x_v, alibi = alibi, rotational = rotational, mask = None) + residual
+
+        # MLP
+        residual = x
+        x = self.mlp_ln(x)
+        x = self.mlp(x) + residual
+
+        return x
+
+class AttentionBlockAdvanced(torch.nn.Module):
+    def __init__(self, n_heads, n_dim, n_dim_head, n_dim_ffn, att_dropout, ffn_dropout):
+        super(AttentionBlock, self).__init__()
+
+        self.n_heads = n_heads
+        self.n_dim_head = n_dim_head
+        self.att_dropout = att_dropout
+
+        # Attention
+        self.attention_self_ln = RMSNorm(n_dim)
+        self.attention_self = Attention(n_heads, n_dim, n_dim_head, att_dropout, True)
+        self.attention_cross_ln_x = RMSNorm(n_dim)
+        self.attention_cross_ln_y = RMSNorm(n_dim)
+        self.attention_cross = Attention(n_heads, n_dim, n_dim_head, att_dropout, False)
+
+        # MLP part
+        self.mlp_ln = RMSNorm(n_dim)
+        self.mlp = AttentionMLP(n_dim, n_dim_ffn, ffn_dropout)
+
+    def forward(self, x, y, alibi = None, rotational = None, self_mask = None, cross_mask = None):
+        B, T, C = x.size() # batch size, sequence length
+
+        # Self Attention
+        residual = x
+        x = self.attention_self_ln(x)
+        x = self.attention_self(x_q = x, x_k = x, x_v = x, alibi = alibi, rotational = rotational, mask = self_mask)
+        x = x + residual
+
+        # Cross Attention
+        residual = x
+        x = self.attention_cross_ln_x(x)
+        y = self.attention_cross_ln_y(y)
+        x = self.attention_cross(x_q = x, x_k = y, x_v = y, alibi = alibi, rotational = rotational, mask = cross_mask)
+        x = x + residual
+
+        # MLP
+        residual = x
+        x = self.mlp_ln(x)
+        x = self.mlp(x)
+        x = x + residual
+
+        return x
+
+#
+# Attention Layer
+#
+
+class Attention(torch.nn.Module):
+    def __init__(self, n_heads, n_dim, n_dim_head, att_dropout, casual):
+        super(Attention, self).__init__()
+        self.n_heads = n_heads
+        self.n_dim = n_dim
+        self.n_dim_head = n_dim_head
+        self.att_dropout = att_dropout
+        self.casual = casual
+
+        # Input -> Query/Key/Value
+        self.attention_q = nn.Linear(n_dim, n_dim_head * n_heads, bias=False)
+        self.attention_k = nn.Linear(n_dim, n_dim_head * n_heads, bias=False)
+        self.attention_v = nn.Linear(n_dim, n_dim_head * n_heads, bias=False)
+        torch.nn.init.normal_(self.attention_q.weight, mean=0.0, std=0.02)
+        torch.nn.init.normal_(self.attention_k.weight, mean=0.0, std=0.02)
+        torch.nn.init.normal_(self.attention_v.weight, mean=0.0, std=0.02)
 
         # Output flatten multiple heads into single tensor
         self.attention_output = nn.Linear(n_dim_head * n_heads, n_dim, bias=False)
         torch.nn.init.normal_(self.attention_output.weight, mean=0.0, std=0.02)
 
-        # Attention dropout
-        # self.attention_output_dropout = nn.Dropout(dropout)
-
-        # MLP part
-        self.mlp_ln = RMSNorm(n_dim)
-        self.mlp_input = nn.Linear(n_dim, n_dim_ffn)
-        self.mlp_output = nn.Linear(n_dim_ffn, n_dim)
-        self.mlp_output_dropout = nn.Dropout(ffn_dropout)
-
-    def forward(self, x, alibi = None, rotational = None):
-
+    def forward(self, *, x_q, x_k, x_v, alibi = None, rotational = None, mask = None):
         B, T, C = x.size() # batch size, sequence length
 
-        # Residual
-        residual = x
-
-        # Input normalization
-        y = self.attention_ln(x)
-
         # Calculation Q/K/V for each head
-        q, k, v = self.attention(y).chunk(3, dim = -1)
+        q = self.attention_q(x_q)
+        k = self.attention_k(x_k)
+        v = self.attention_v(x_v)
         q, k, v = map(lambda t: rearrange(t, 'b n (h d) -> b h n d', h = self.n_heads), (q, k, v))
-        
+
         # Rotary embedding
         if rotational is not None:
             q = apply_rotary_pos_emb(rotational, q)
             k = apply_rotary_pos_emb(rotational, k)
 
+        # Calculate mask
+        target_mask = mask
+        if alibi is not None:
+            if mask is not None:
+                target_mask = mask + alibi
+            else:
+                target_mask = alibi
+
         # Dot product attention
-        # with torch.backends.cuda.sdp_kernel(enable_mem_efficient=True, enable_math=False): # Math backend is broken on mixed precision
         y = torch.nn.functional.scaled_dot_product_attention(q, k, v, 
-            attn_mask = alibi if alibi is not None else None, 
+            attn_mask = target_mask, 
             dropout_p = self.att_dropout if self.training else 0.0, 
-            is_causal = self.casual and alibi is None # Disable casual attention since alibi must be already casualed
+            is_causal = self.casual
         )
 
         # Reassemble all head outputs side by side
@@ -169,21 +325,22 @@ class AttentionBlock(torch.nn.Module):
 
         # Output
         y = self.attention_output(y)
-        # y = self.attention_output_dropout(y)
 
-        # Residual
-        y = residual + y
-        residual = y
+        return x
 
-        # MLP
-        y = self.mlp_ln(y)
-        y = self.mlp_input(y)
-        y = F.gelu(y)
-        y = self.mlp_output(y)
-        y = self.mlp_output_dropout(y)
-        y = residual + y
+class AttentionMLP(torch.nn.Module):
+    def __init__(self, n_dim, n_dim_ffn, ffn_dropout):
+        super(AttentionMLP, self).__init__()
+        self.mlp_input = nn.Linear(n_dim, n_dim_ffn)
+        self.mlp_output = nn.Linear(n_dim_ffn, n_dim)
+        self.mlp_output_dropout = nn.Dropout(ffn_dropout)
 
-        return y
+    def forward(self, x):
+        x = self.mlp_input(x)
+        x = F.gelu(x)
+        x = self.mlp_output(x)
+        x = self.mlp_output_dropout(x)
+        return x
 
 #
 # Convolutional positional embedding

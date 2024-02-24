@@ -26,6 +26,18 @@ def process_segments(collection, path):
     # Extract phonemes and text
     data = extract_phonemes(collection, path)
 
+    # Check for unknown tokens, or invalid durations
+    for word in data['w']:
+        if word['w'] is not None:
+            for phoneme in word['p']:
+                if phoneme['p'] == config.tokenizer.unknown_token:
+                    return None
+                if phoneme['p'] is not None and (phoneme['t'][1] - phoneme['t'][0] > 1):
+                    return None
+
+    # Phoenemes
+    known_phonemes = {}
+
     # Text
     text = format_tokens(data['t'])
 
@@ -34,29 +46,36 @@ def process_segments(collection, path):
     for word in data['w']:
         if word['w'] is not None:
             for phoneme in word['p']:
+                duration = min(phoneme['t'][1] - phoneme['t'][0], 1) # Clip duration to 1 second
                 if phoneme['p'] is not None:
-                    phoneme_with_durations.append((phoneme['p'], phoneme['t'][1] - phoneme['t'][0]))
+                    known_phonemes[phoneme['p']] = max(known_phonemes.get(phoneme['p'], 0), round(duration / config.audio.token_duration))
+                    phoneme_with_durations.append((phoneme['p'], duration))
                 else:
-                    phoneme_with_durations.append((config.tokenizer.silence_token, phoneme['t'][1] - phoneme['t'][0]))
+                    phoneme_with_durations.append((config.tokenizer.silence_token, duration))
         else:
-            phoneme_with_durations.append((config.tokenizer.silence_token, word['t'][1] - word['t'][0]))
+            duration = min(word['t'][1] - word['t'][0], 1) # Clip duration to 1 second
+            phoneme_with_durations.append((config.tokenizer.silence_token, duration))
 
     # Trim silence
     while len(phoneme_with_durations) > 0 and phoneme_with_durations[0][0] == config.tokenizer.silence_token:
         phoneme_with_durations.pop(0)
     while len(phoneme_with_durations) > 0 and phoneme_with_durations[-1][0] == config.tokenizer.silence_token:
         phoneme_with_durations.pop(-1)
-    phonemes = format_durations(phoneme_with_durations)
 
-    # Create output
-    output_train = [text + '｜' + phonemes]
+    # GPT Training
+    output_train = [text + '｜' + format_durations_compact(phoneme_with_durations)]
+
+    # Tokenizer training
+    phonemes = format_durations(phoneme_with_durations)
+    output_train_text = [text]
+    output_train_phonemes = [phonemes]
     output_tokenizer = [text, phonemes]
 
     # Check if unknown tokens are present
     if (config.tokenizer.unknown_token in text) or (config.tokenizer.unknown_token in phonemes):
-        return [], []
+        return None
     
-    return output_train, output_tokenizer
+    return output_train, output_train_text, output_train_phonemes, output_tokenizer, known_phonemes
 
 def format_durations(phonemes):
     output = ''
@@ -64,6 +83,12 @@ def format_durations(phonemes):
         for i in range(round(duration / config.audio.token_duration)):
             output += phoneme
     return output
+
+def format_durations_compact(phonemes):
+    output = []
+    for phoneme, duration in phonemes:
+        output += ["(" + phoneme + "," + str(round(duration / config.audio.token_duration)) + ")"]
+    return ",".join(output)
 
 def format_tokens(src):
     src = normalize(src)
@@ -132,71 +157,60 @@ def extract_phonemes(collection, path):
 def main():
 
     # Corpus
-    if not os.path.exists("datasets/train.txt"):
-        print("Starting assembling text training corpus...")
-        files = [] 
-        files += glob.glob("datasets/vctk-aligned/*/*.TextGrid") 
-        files += glob.glob("datasets/libritts-aligned/*/*.TextGrid")
-        files += glob.glob("datasets/common-voice-en-aligned/*/*.TextGrid")
-        files += glob.glob("datasets/common-voice-ru-aligned/*/*.TextGrid") 
-        files += glob.glob("datasets/common-voice-uk-aligned/*/*.TextGrid")
+    print("Starting assembling text training corpus...")
+    files = [] 
+    files += glob.glob("datasets/vctk-aligned/*/*.TextGrid") 
+    files += glob.glob("datasets/libritts-aligned/*/*.TextGrid")
+    files += glob.glob("datasets/common-voice-en-aligned/*/*.TextGrid")
+    files += glob.glob("datasets/common-voice-ru-aligned/*/*.TextGrid") 
+    files += glob.glob("datasets/common-voice-uk-aligned/*/*.TextGrid")
     
-        # Process files
-        print("Processing files...")
-        output_binary = []
-        file_text = open("datasets/train.txt", "w")
-        file_tok_text = open("datasets/train_tokenizer.txt", "w")
-        with multiprocessing.Manager() as manager:
-            with multiprocessing.Pool(processes=16) as pool:
-                for result in tqdm(pool.imap_unordered(process_segments_async, files, chunksize=32), total=len(files)):
-                    segments, segments_tokenizer = result
-                    for s in segments:
-                        file_text.write(s + "\n")
-                    for s in segments_tokenizer:
-                        file_tok_text.write(s + "\n")
+    # Process files
+    print("Processing files...")
+    known_phonemes = {}
+    file_text = open("datasets/train.txt", "w")
+    file_tok = open("datasets/train_tokenizer.txt", "w")
+    file_tok_text = open("datasets/train_tokenizer_text.txt", "w")
+    file_tok_ph = open("datasets/train_tokenizer_phonemes.txt", "w")
+    with multiprocessing.Manager() as manager:
+        with multiprocessing.Pool(processes=16) as pool:
+            for result in tqdm(pool.imap_unordered(process_segments_async, files, chunksize=32), total=len(files)):
+                if result is None:
+                    continue
+                segments, segments_tokenizer_text, segments_tokenizer_ph, segments_tokenizer, kp = result
+                for k, v in kp.items():
+                    known_phonemes[k] = max(known_phonemes.get(k, 0), v)
+                for s in segments:
+                    file_text.write(s + "\n")
+                for s in segments_tokenizer:
+                    file_tok.write(s + "\n")
+                for s in segments_tokenizer_text:
+                    file_tok_text.write(s + "\n")
+                for s in segments_tokenizer_ph:
+                    file_tok_ph.write(s + "\n")
+    with open("datasets/train_phonemes.txt", "w") as fp:
+        for k, v in known_phonemes.items():
+            fp.write(k + " " + str(v) + "\n")
 
-        # Close files
-        file_text.close()
-    else:
-        print("Train corpus already assembled. Skipping...")
+    # Close files
+    file_text.close()
+    file_tok.close()
+    file_tok_text.close()
+    file_tok_ph.close()
 
-    # Tokenizer
-    model_prefix = "tokenizer"
-    if not os.path.exists(model_prefix+".model"):
-        print("Training tokenizer...")
-        spm.SentencePieceTrainer.train(
-            input = "datasets/train_tokenizer.txt", 
-            model_prefix = model_prefix, 
-            vocab_size = config.tokenizer.vocab_size, 
-            character_coverage = 1.0, 
-            num_threads = 60, 
-            train_extremely_large_corpus = True
-        )
-    else:
-        print("Tokenizer already trained. Skipping...")
+    # Write vocab
+    with open("datasets/vocab.txt", "w") as vc:
 
-    # Tokenize
-    if not os.path.exists("datasets/train.bin"):
-        print("Tokenizing train corpus...")
-        tokenizer = Tokenizer(config, model_prefix + ".model")
-        with open("datasets/train.txt", "r") as f:
-            with open("datasets/train.bin", "w") as f2:
-                for line in tqdm(f.readlines()):
+        # Write silence token
+        vc.write(config.tokenizer.silence_token + "\n")
 
-                    # Prepare prompt
-                    text, phonemes = line.split("｜")
-                    text = tokenizer.encode(text)
-                    phonemes = tokenizer.encode(phonemes)
-                    prompt = [tokenizer.sequence_begin_token_id, tokenizer.text_begin_token_id] \
-                                + text \
-                                + [tokenizer.text_end_token_id, tokenizer.phonemes_begin_token_id]\
-                                + phonemes \
-                                + [tokenizer.phonemes_end_token_id, tokenizer.sequence_end_token_id]
-
-                    # Write prompt
-                    np.array(prompt, dtype=np.uint16).tofile(f2)
-    else:
-        print("Train corpus already tokenized. Skipping...")
+        # Write durations
+        for i in range(0, 100): # It is actually 94, but let's keep it simple
+            vc.write(str(i) + "\n")
+        
+        # Write phonemes
+        for k, v in known_phonemes.items():
+            vc.write(k + "\n")
 
 if __name__ == "__main__":
     main()

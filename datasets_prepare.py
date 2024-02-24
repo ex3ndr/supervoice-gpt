@@ -10,7 +10,7 @@ import torchaudio
 import csv
 from pathlib import Path
 from tqdm import tqdm
-from utils.audio import load_mono_audio
+from utils.audio import load_mono_audio, init_if_needed, trim_silence
 
 #
 # Parameters
@@ -45,6 +45,9 @@ def execute_parallel(args):
 
     # Load audio
     waveform = load_mono_audio(file, 16000, device=device)
+
+    # Trim silence
+    waveform = trim_silence(waveform, 16000)
 
     # Clean up text
     for symbol in CLEANUP_SYMBOLS:
@@ -191,6 +194,7 @@ def execute_run():
     collections['common-voice-en'] = load_common_voice_corpus("external_datasets/common-voice-16.0-en/en")
     collections['common-voice-ru'] = load_common_voice_corpus("external_datasets/common-voice-16.0-ru/ru")
     collections['common-voice-uk'] = load_common_voice_corpus("external_datasets/common-voice-16.0-uk/uk")
+    init_if_needed()
 
     # Process collections
     for collection in collections:
@@ -200,7 +204,7 @@ def execute_run():
         speakers = collections[collection]['speakers']
         prepared_dir = "datasets/" + name + "-prepared/"
 
-         # Check if exists
+        # Check if exists
         if Path(prepared_dir).exists():
             print(f"Collection {name} already prepared")
             continue
