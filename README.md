@@ -2,6 +2,13 @@
 
 A GPT model that converts from text to phonemes with durations that is suitable to feed into voice synthesizer.
 
+## How it works?
+
+This model converts raw text to phonemes and their durations compatible with [Montreal Forced Aligner](https://montreal-forced-aligner.readthedocs.io/en/latest/).
+
+This model converts string like `"Hey, Vera, what time is it?"` to list of tuples of phoneme and it's duration:
+ `[('ç', 9), ('iː', 7), ('v', 7), ('ɛ', 8), ('ɹ', 8), ('i', 7), ('w', 6), ('ɐ', 5), ('ʔ', 3), ('tʰ', 8), ('aj', 11), ('m', 7), ('ɪ', 6), ('z', 7), ('ɪ', 6), ('ʔ', 8)]`
+
 ## Dataset
 
 This module require extensive dataset preparation. To prepare all needed data next commands are required to be performed:
