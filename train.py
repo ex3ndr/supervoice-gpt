@@ -31,7 +31,7 @@ from supervoice.model import SupervoiceGPT
 from supervoice.tokenizer import Tokenizer
 
 # Train parameters
-train_experiment = "enc_dec_fix_phonemes"
+train_experiment = "pre"
 train_project="supervoice-gpt"
 train_auto_resume = True
 train_batch_size = 72 # Per GPU

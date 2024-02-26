@@ -4,7 +4,8 @@ config = dict_to_object({
 
     # Audio
     "audio": {
-        "token_duration": 256 / 24000 # 256 samples at 24kHz
+        # "token_duration": 256 / 24000 # 256 samples at 24kHz
+        "token_duration": 0.01 # To match the 100Hz token duration or Montreal Forced Aligner
     },
 
     # Architecture
@@ -19,7 +20,7 @@ config = dict_to_object({
         "n_dim_duration": 256, # Should be less than n_dim
 
         # Minimum and maximum duration values
-        "min_durations": 1,
+        "min_durations": 0,
         "max_durations": 100,
     },
 

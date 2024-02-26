@@ -170,13 +170,13 @@ class SupervoiceGPT(torch.nn.Module):
                 break
 
         tokens = tokenizer.decode_phonemes(ctx_output_tokens.squeeze(0).cpu().tolist())
-        durations = (ctx_output_durations.squeeze(0).cpu() - 1).tolist()
+        durations = (ctx_output_durations.squeeze(0).cpu() + self.config.tokenizer.min_durations  - 1).tolist()
         tokens = tokens[1:]
         durations = durations[1:]
         if valid_exit:
             tokens = tokens[:-1]
             durations = durations[:-1]
-        return tokens, durations
+        return list(zip(tokens, durations))
 
     def predict_next(self, input, output_tokens, output_durations, tokenizer, top_k = 10, device = "cpu"):
 

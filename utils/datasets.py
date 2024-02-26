@@ -91,7 +91,7 @@ class PhonemesDataset(torch.utils.data.IterableDataset):
 
             # Prepare output
             y_p = torch.tensor([self.tokenizer.sequence_begin_token_id] + self.tokenizer.encode_phonemes([p for p, _ in phonemes]) + [self.tokenizer.sequence_end_token_id]).int()
-            y_d = torch.tensor([0] + [d + 1 for _, d in phonemes] + [0]).int()
+            y_d = torch.tensor([0] + [(d + 1) for _, d in phonemes] + [0]).int()
 
             # Check if sequence is too long
             if len(x) > self.max_sequence or len(y_p) > self.max_sequence:
