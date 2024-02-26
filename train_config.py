@@ -19,9 +19,8 @@ config = dict_to_object({
 
         "n_dim_duration": 256, # Should be less than n_dim
 
-        # Minimum and maximum duration values
-        "min_durations": 0,
-        "max_durations": 100,
+        # Maximum duration values
+        "max_duration": 100,
     },
 
     # Tokenizer

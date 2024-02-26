@@ -9,7 +9,7 @@ class SupervoiceGPT(torch.nn.Module):
         self.config = config
         self.n_input_tokens = config.tokenizer.vocab_size
         self.n_output_tokens = len(config.tokenizer.vocab_output)
-        self.n_durations = (config.gpt.max_durations - config.gpt.min_durations + 1) + 1 # +1 Padding
+        self.n_durations = (config.gpt.max_durations + 1) + 1 # +1 Padding
 
         # Embeddings
         self.input_embedding = torch.nn.Embedding(self.n_input_tokens, self.config.gpt.n_dim)
@@ -170,7 +170,7 @@ class SupervoiceGPT(torch.nn.Module):
                 break
 
         tokens = tokenizer.decode_phonemes(ctx_output_tokens.squeeze(0).cpu().tolist())
-        durations = (ctx_output_durations.squeeze(0).cpu() + self.config.tokenizer.min_durations  - 1).tolist()
+        durations = (ctx_output_durations.squeeze(0).cpu() - 1).tolist()
         tokens = tokens[1:]
         durations = durations[1:]
         if valid_exit:

@@ -127,13 +127,15 @@ def extract_phonemes(collection, path):
         i += 1
 
     # Process words
+    first = False
     for word in words:
         if word.mark == "": # Ignore empty words
             continue
 
         # Add silence between words
-        if word.minTime != last_word_time:
+        if not first:
             output_words.append({'t': [last_word_time + time_offset, word.minTime + time_offset], 'w': None})
+        first = False
 
         # Add word
         word_phonemes = []
