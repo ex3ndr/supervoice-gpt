@@ -9,7 +9,7 @@ class SupervoiceGPT(torch.nn.Module):
         self.config = config
         self.n_input_tokens = config.tokenizer.vocab_size
         self.n_output_tokens = len(config.tokenizer.vocab_output)
-        self.n_durations = (config.gpt.max_durations + 1) + 1 # +1 Padding
+        self.n_durations = (config.gpt.max_duration + 1) + 1 # +1 Padding
 
         # Embeddings
         self.input_embedding = torch.nn.Embedding(self.n_input_tokens, self.config.gpt.n_dim)
