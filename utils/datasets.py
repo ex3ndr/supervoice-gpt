@@ -6,24 +6,39 @@ import os
 def create_dataset_loader(path, sequence_length, batch_size, tokenizer, workers):
 
     # Load dataset
-    dataset = PhonemesDataset(path, PhonemesDataset)
+    dataset = PhonemesDataset(path, tokenizer, sequence_length)
 
     # Collator
     def collate_fn(batch):
+        B = len(batch)
         x, y_d, y_p = zip(*batch)
 
         # Calculate lengths
         x_lengths = torch.tensor([len(x) for x in x])
-        y_d_lengths = torch.tensor([len(y) for y in y_d])
-        y_p_lengths = torch.tensor([len(y) for y in y_p])
+        y_lengths = torch.tensor([len(y) - 1 for y in y_d])
 
-        # Pad sequences
-        # x = torch.nn.utils.rnn.pad_sequence(x, batch_first=True, padding_value=tokenizer.pad_token_id)
-        # y_d = torch.nn.utils.rnn.pad_sequence(y_d, batch_first=True, padding_value=0)
-        # y_p = torch.nn.utils.rnn.pad_sequence(y_p, batch_first=True, padding_value=tokenizer.pad_token_id)
-        return x, x_lengths, y_d, y_d_lengths, y_p, y_p_lengths
+        # Create targets
+        t_d = torch.zeros(B, sequence_length, dtype = torch.int64)
+        t_p = torch.zeros(B, sequence_length, dtype = torch.int64)
+        for i in range(B):
+            t_d[i, :len(y_d[i]) - 1] = y_d[i][1:]
+            t_p[i, :len(y_p[i]) - 1] = y_p[i][1:]
 
-    loader = torch.utils.data.DataLoader(dataset, batch_size = batch_size, num_workers = workers, shuffle=False, pin_memory=True, drop_last=True)
+        # Padded tensors
+        x_padded = torch.IntTensor(B, sequence_length)
+        y_t_padded = torch.IntTensor(B, sequence_length)
+        y_d_padded = torch.IntTensor(B, sequence_length)
+        x_padded.zero_()
+        y_t_padded.zero_()
+        y_d_padded.zero_()
+        for i in range(B):
+            x_padded[i, :len(x[i])] = x[i]
+            y_t_padded[i, :len(y_p[i]) - 1] = y_p[i][:-1]
+            y_d_padded[i, :len(y_d[i]) - 1] = y_d[i][:-1]
+
+        return x_padded, x_lengths, y_t_padded, y_d_padded, y_lengths, t_p, t_d
+
+    loader = torch.utils.data.DataLoader(dataset, batch_size = batch_size, num_workers = workers, shuffle=False, pin_memory=True, drop_last=True, collate_fn = collate_fn)
     return loader
 
 #
@@ -50,8 +65,10 @@ class GPTDataset(torch.utils.data.IterableDataset):
         return iter(self.generate())
 
 class PhonemesDataset(torch.utils.data.IterableDataset):
-    def __init(self, path, tokenizer):
+    def __init__(self, path, tokenizer, max_sequence):
         self.tokenizer = tokenizer
+        self.data = []
+        self.max_sequence = max_sequence
         with open(path, 'r') as file:
             for line in file.readlines():
                 text, phonemes = line.split('｜')
@@ -69,13 +86,18 @@ class PhonemesDataset(torch.utils.data.IterableDataset):
             text, phonemes = item
             
             # Prepare input
-            x = torch.tensor(self.tokenizer.encode(text)).long()
+            input_tokens = self.tokenizer.encode(text) if random.random() < 0.3 else self.tokenizer.encode_sample(text) # 30% chance of using optimal tokenization
+            x = torch.tensor([self.tokenizer.sequence_begin_token_id] + input_tokens + [self.tokenizer.sequence_end_token_id]).int()
 
             # Prepare output
-            y_d = torch.tensor([d for _, d in phonemes]).long()
-            y_p = torch.tensor(self.tokenizer.encode_phoneme([p for p, _ in phonemes])).long()
+            y_p = torch.tensor([self.tokenizer.sequence_begin_token_id] + self.tokenizer.encode_phonemes([p for p, _ in phonemes]) + [self.tokenizer.sequence_end_token_id]).int()
+            y_d = torch.tensor([0] + [d + 1 for _, d in phonemes] + [0]).int()
 
-            return (x, y_d, y_p)
+            # Check if sequence is too long
+            if len(x) > self.max_sequence or len(y_p) > self.max_sequence:
+                continue
+
+            yield (x, y_d, y_p)
     
     def __iter__(self):
         return iter(self.generate())

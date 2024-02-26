@@ -11,10 +11,6 @@ class Tokenizer:
         self.silence_token = config.tokenizer.silence_token
         self.sequence_begin_token = config.tokenizer.sequence_begin_token
         self.sequence_end_token = config.tokenizer.sequence_end_token
-        self.text_begin_token = config.tokenizer.text_begin_token
-        self.text_end_token = config.tokenizer.text_end_token
-        self.phonemes_begin_token = config.tokenizer.phonemes_begin_token
-        self.phonemes_end_token = config.tokenizer.phonemes_end_token
         self.unknown_token = config.tokenizer.unknown_token
 
         # Load processor
@@ -27,10 +23,13 @@ class Tokenizer:
         self.unknown_token_id = self.sp.piece_to_id(self.unknown_token)
         self.sequence_begin_token_id = self.sp.piece_to_id(self.sequence_begin_token)
         self.sequence_end_token_id = self.sp.piece_to_id(self.sequence_end_token)
-        self.text_begin_token_id = self.sp.piece_to_id(self.text_begin_token)
-        self.text_end_token_id = self.sp.piece_to_id(self.text_end_token)
-        self.phonemes_begin_token_id = self.sp.piece_to_id(self.phonemes_begin_token)
-        self.phonemes_end_token_id = self.sp.piece_to_id(self.phonemes_end_token)
+
+        # Phoneme map
+        self.phoneme_to_id = {}
+        self.id_to_phoneme = {}
+        for p in range(len(config.tokenizer.vocab_output)):
+            self.phoneme_to_id[config.tokenizer.vocab_output[p]] = p
+            self.id_to_phoneme[p] = config.tokenizer.vocab_output[p]
 
     def encode(self, text):
 
@@ -39,6 +38,14 @@ class Tokenizer:
 
         # Encode
         return self.sp.encode(text)
+
+    def encode_sample(self, text):
+
+        # Normalize first
+        text = normalize(text).lower()
+
+        # Encode
+        return self.sp.encode(text, enable_sampling=True, alpha=0.1, nbest_size=-1)
     
     def encode_to_str(self, text):
         
@@ -47,6 +54,12 @@ class Tokenizer:
 
         # Encode
         return self.sp.encode(text, out_type=str)
+
+    def encode_phonemes(self, phonemes):
+        return [self.phoneme_to_id[p] for p in phonemes]
+
+    def decode_phonemes(self, phonemes):
+        return [self.id_to_phoneme[p] for p in phonemes]
 
     def decode(self, tokens):
         return self.sp.decode(tokens)

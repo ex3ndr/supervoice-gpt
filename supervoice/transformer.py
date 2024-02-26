@@ -142,7 +142,7 @@ class TransformerAdvanced(nn.Module):
             raise ValueError(f"Unknown position embedding: {position_embedding}")
 
 
-    def forward(self, x, y, x_mask = None, y_mask = None):
+    def forward(self, x, y, x_mask = None, y_mask = None, xy_mask = None):
         batch, seq_len_x, *_ = x.shape
         _, seq_len_y, *_ = y.shape
 
@@ -157,7 +157,7 @@ class TransformerAdvanced(nn.Module):
         # Inspired by: https://github.com/ofirpress/attention_with_linear_biases/issues/5
         if self.position_embedding == 'alibi':
             alibi_x = get_alibi_mask(seq_len_x, self.n_heads, False, x.device)
-            alibi_y = get_alibi_mask(seq_len_y, self.n_heads, False, x.device)
+            alibi_y = get_alibi_mask(seq_len_y, self.n_heads, False, y.device)
 
         # Compute rotary embeddings
         if self.position_embedding == 'rotary':
@@ -176,7 +176,19 @@ class TransformerAdvanced(nn.Module):
         # Run through decoder attention blocks
         decoder_output = y
         for decoder in self.layers_dec:
-            decoder_output = decoder(decoder_output, encoder_output, alibi = alibi_y, rotational = rotational_y, self_mask = y_mask, cross_mask = x_mask)
+            decoder_output = decoder(
+
+                # Self atention for decoder outputs
+                x = decoder_output,
+                self_alibi = alibi_y, 
+                self_rotational = rotational_y, 
+                self_mask = y_mask, 
+
+                # Cross attention between encoder and decoder outputs                
+                y = encoder_output,
+                cross_mask = xy_mask,
+                # NOTE: No positional encodings are used in cross attention
+            )
 
         # Output normalization
         decoder_output = self.output_norm(decoder_output)
@@ -238,19 +250,19 @@ class AttentionBlockAdvanced(torch.nn.Module):
         self.mlp_ln = RMSNorm(n_dim)
         self.mlp = AttentionMLP(n_dim, n_dim_ffn, ffn_dropout)
 
-    def forward(self, x, y, alibi = None, rotational = None, self_mask = None, cross_mask = None):
+    def forward(self, x, y, self_alibi = None, cross_alibi = None, self_rotational = None, cross_rotational = None, self_mask = None, cross_mask = None):
 
         # Self Attention
         residual = x
         x = self.attention_self_ln(x)
-        x = self.attention_self(x_q = x, x_k = x, x_v = x, alibi = alibi, rotational = rotational, mask = self_mask)
+        x = self.attention_self(x_q = x, x_k = x, x_v = x, alibi = self_alibi, rotational = self_rotational, mask = self_mask)
         x = x + residual
 
         # Cross Attention
         residual = x
         x = self.attention_cross_ln_x(x)
         y = self.attention_cross_ln_y(y)
-        x = self.attention_cross(x_q = x, x_k = y, x_v = y, alibi = alibi, rotational = rotational, mask = cross_mask)
+        x = self.attention_cross(x_q = x, x_k = y, x_v = y, alibi = cross_alibi, rotational = cross_rotational, mask = cross_mask)
         x = x + residual
 
         # MLP
@@ -296,7 +308,6 @@ class Attention(torch.nn.Module):
         q = self._split_heads(self.attention_q(x_q))
         k = self._split_heads(self.attention_k(x_k))
         v = self._split_heads(self.attention_v(x_v))
-        # q, k, v = map(lambda t: rearrange(t, 'b n (h d) -> b h n d', h = self.n_heads), (q, k, v))
 
         # Rotary embedding
         if rotational is not None:
@@ -312,14 +323,6 @@ class Attention(torch.nn.Module):
                 target_mask = alibi
 
         # Dot product attention
-        # print(
-        #     q.shape, 
-        #     k.shape,
-        #     v.shape, 
-        #     target_mask.shape if target_mask is not None else None, 
-        #     mask.shape if mask is not None else None,
-        #     alibi.shape if alibi is not None else None,
-        # )
         y = torch.nn.functional.scaled_dot_product_attention(q, k, v, 
             attn_mask = target_mask, 
             dropout_p = self.att_dropout if self.training else 0.0, 

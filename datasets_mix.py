@@ -199,18 +199,22 @@ def main():
     file_tok_ph.close()
 
     # Write vocab
-    with open("datasets/vocab.txt", "w") as vc:
+    with open("./datasets/tokenizer_phonemes.vocab", "w") as vc:
 
-        # Write silence token
-        vc.write(config.tokenizer.silence_token + "\n")
-
-        # Write durations
-        for i in range(0, 100): # It is actually 94, but let's keep it simple
-            vc.write(str(i) + "\n")
-        
-        # Write phonemes
+        # Collect tokens
+        items = [ "<pad>", "<s>", "</s>", config.tokenizer.silence_token]
+        phon = []
         for k, v in known_phonemes.items():
-            vc.write(k + "\n")
+            phon.append(k)
+        phon.sort()
+        items += phon
+        
+        # Wrap in quotes
+        items = [f'"{i}"' for i in items]
+
+        # Write
+        vc.write("[" + ",".join(items) + "]")
+        
 
 if __name__ == "__main__":
     main()
