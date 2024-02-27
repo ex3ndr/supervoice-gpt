@@ -31,5 +31,5 @@ def supervoice():
             device = next(self.model.parameters()).device
             return self.model.generate(input, tokenizer, max_new_tokens, temperature, top_k, deterministic, device=device)
     
-    return SupervoicePhonemizer(model)
+    return SupervoicePhonemizer(model, tokenizer)
             
