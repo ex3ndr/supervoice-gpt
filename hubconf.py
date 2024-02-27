@@ -5,7 +5,7 @@ def supervoice():
     # Imports
     import torch
     from supervoice_gpt import SupervoiceGPT, Tokenizer
-    from train_config import config
+    from .train_config import config
 
     # Download
     # hub_dir = torch.hub.get_dir()
