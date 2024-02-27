@@ -9,8 +9,8 @@ import textgrid
 from tqdm import tqdm
 from pathlib import Path
 import numpy as np
-from supervoice.normalize import normalize
-from supervoice.tokenizer import Tokenizer
+from supervoice_gpt.normalize import normalize
+from supervoice_gpt import Tokenizer
 from train_config import config
 import sentencepiece as spm
 import multiprocessing
