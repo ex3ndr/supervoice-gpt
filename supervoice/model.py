@@ -199,3 +199,12 @@ class SupervoiceGPT(torch.nn.Module):
         probs_token, indices = torch.topk(probs_token, top_k)
         
         return probs_token.cpu().tolist(), tokenizer.decode_phonemes(indices.cpu().tolist())
+
+    def encode(self, *, input):
+        input = input.unsqueeze(0)
+
+        # Embeddings
+        input_embedded = self.input_embedding(input)
+
+        # Run an encoder
+        return self.encoder(input_embedded).squeeze(0)
