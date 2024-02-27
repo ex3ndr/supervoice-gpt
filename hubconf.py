@@ -1,6 +1,6 @@
 dependencies = ['torch', 'torchaudio']
 
-def supervoice():
+def phonemizer():
 
     # Imports
     import torch
