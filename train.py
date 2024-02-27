@@ -25,9 +25,8 @@ from accelerate import Accelerator, DistributedDataParallelKwargs
 from accelerate.utils import set_seed
 
 # Local
-from train_config import config
+from supervoice_gpt import SupervoiceGPT, Tokenizer, config
 from utils.datasets import create_dataset_loader
-from supervoice_gpt import SupervoiceGPT, Tokenizer
 
 # Train parameters
 train_experiment = "pre"

@@ -1,6 +1,5 @@
 import torch
-from supervoice_gpt import Tokenizer, SupervoiceGPT
-from train_config import config
+from supervoice_gpt import Tokenizer, SupervoiceGPT, config
 
 # tokenizer = Tokenizer(config, "tokenizer_text.model")
 

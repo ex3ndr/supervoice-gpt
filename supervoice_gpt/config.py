@@ -1,4 +1,4 @@
-from utils.misc import dict_to_object
+from .misc import dict_to_object
 
 config = dict_to_object({
 

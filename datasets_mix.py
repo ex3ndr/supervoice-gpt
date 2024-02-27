@@ -10,8 +10,7 @@ from tqdm import tqdm
 from pathlib import Path
 import numpy as np
 from supervoice_gpt.normalize import normalize
-from supervoice_gpt import Tokenizer
-from train_config import config
+from supervoice_gpt import Tokenizer, config
 import sentencepiece as spm
 import multiprocessing
 
