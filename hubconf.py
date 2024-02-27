@@ -27,9 +27,9 @@ def phonemizer():
             super(SupervoicePhonemizer, self).__init__()
             self.model = model
             self.tokenizer = tokenizer
-        def forward(self, input, tokenizer, max_new_tokens = 128, temperature=1.0, top_k=5, deterministic = False):
+        def forward(self, input, max_new_tokens = 128, temperature=1.0, top_k=5, deterministic = False):
             device = next(self.model.parameters()).device
-            return self.model.generate(input, tokenizer, max_new_tokens, temperature, top_k, deterministic, device=device)
+            return self.model.generate(input, self.tokenizer, max_new_tokens, temperature, top_k, deterministic, device=device)
     
     return SupervoicePhonemizer(model, tokenizer)
             
