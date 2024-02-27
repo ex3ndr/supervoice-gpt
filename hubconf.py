@@ -4,8 +4,8 @@ def supervoice():
 
     # Imports
     import torch
-    from supervoice.tokenizer import Tokenizer
-    from supervoice.model import SupervoiceGPT
+    from .supervoice.tokenizer import Tokenizer
+    from .supervoice.model import SupervoiceGPT
     from train_config import config
 
     # Download
