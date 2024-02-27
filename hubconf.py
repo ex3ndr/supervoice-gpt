@@ -4,6 +4,7 @@ def supervoice():
 
     # Imports
     import torch
+    import os
     from supervoice_gpt import SupervoiceGPT, Tokenizer, config
 
     # Download
@@ -19,6 +20,16 @@ def supervoice():
     checkpoint = torch.hub.load_state_dict_from_url("https://shared.korshakov.com/models/supervoice-gpt-1.pt")
     model.load_state_dict(checkpoint['model'])
     model.eval()
+
+    # Wrapper
+    class SupervoicePhonemizer(torch.nn.Module):
+        def __init__(self, model, tokenizer):
+            super(SupervoicePhonemizer, self).__init__()
+            self.model = model
+            self.tokenizer = tokenizer
+        def forward(self, input, tokenizer, max_new_tokens = 128, temperature=1.0, top_k=5, deterministic = False):
+            device = next(self.model.parameters()).device
+            return self.model(input, tokenizer, max_new_tokens, temperature, top_k, deterministic, device=device)
     
-    return model
+    return SupervoicePhonemizer(model)
             
