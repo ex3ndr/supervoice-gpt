@@ -11,6 +11,7 @@ import csv
 from pathlib import Path
 from tqdm import tqdm
 from utils.audio import load_mono_audio, init_if_needed, trim_silence
+import pyworld as pw
 
 #
 # Parameters
@@ -49,6 +50,13 @@ def execute_parallel(args):
     # Trim silence
     waveform = trim_silence(waveform, 16000)
 
+    # Move to CPU
+    waveform = waveform.cpu()
+
+    # Predict pitch
+    f0, t = pw.dio(waveform.numpy().astype('double'), 16000, frame_period=(1000 * 160)/16000) # 1000ms * (hop/sample_rate)
+    f0 = torch.tensor(f0)
+
     # Clean up text
     for symbol in CLEANUP_SYMBOLS:
         text = text.replace(symbol, " ")
@@ -57,9 +65,12 @@ def execute_parallel(args):
 
     # Save
     target_dir = os.path.join(collection_dir, speaker_directory(speaker))
-    torchaudio.save(os.path.join(target_dir, target_name + ".wav"), waveform.unsqueeze(0).cpu(), 16000)
+    torchaudio.save(os.path.join(target_dir, target_name + ".wav"), waveform.unsqueeze(0), 16000)
     with open(os.path.join(target_dir, target_name + ".txt"), "w", encoding="utf-8") as f:
         f.write(text)
+    torch.save(f0, os.path.join(target_dir, target_name + ".f0.pt"))
+    
+
 
 def load_vctk_corpus():
     files = []
