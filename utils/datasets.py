@@ -11,7 +11,7 @@ def create_dataset_loader(path, sequence_length, batch_size, tokenizer, workers)
     # Collator
     def collate_fn(batch):
         B = len(batch)
-        x, y_d, y_p = zip(*batch)
+        x, y_d, y_p, y_pi = zip(*batch)
 
         # Calculate lengths
         x_lengths = torch.tensor([len(x) for x in x])
@@ -20,23 +20,28 @@ def create_dataset_loader(path, sequence_length, batch_size, tokenizer, workers)
         # Create targets
         t_d = torch.zeros(B, sequence_length, dtype = torch.int64)
         t_p = torch.zeros(B, sequence_length, dtype = torch.int64)
+        t_pi = torch.zeros(B, sequence_length, dtype = torch.int64)
         for i in range(B):
             t_d[i, :len(y_d[i]) - 1] = y_d[i][1:]
             t_p[i, :len(y_p[i]) - 1] = y_p[i][1:]
+            t_pi[i, :len(y_pi[i]) - 1] = y_pi[i][1:]
 
         # Padded tensors
         x_padded = torch.IntTensor(B, sequence_length)
         y_t_padded = torch.IntTensor(B, sequence_length)
         y_d_padded = torch.IntTensor(B, sequence_length)
+        y_pi_padded = torch.IntTensor(B, sequence_length)
         x_padded.zero_()
         y_t_padded.zero_()
         y_d_padded.zero_()
+        y_pi_padded.zero_()
         for i in range(B):
             x_padded[i, :len(x[i])] = x[i]
             y_t_padded[i, :len(y_p[i]) - 1] = y_p[i][:-1]
             y_d_padded[i, :len(y_d[i]) - 1] = y_d[i][:-1]
+            y_pi_padded[i, :len(y_pi[i]) - 1] = y_pi[i][:-1]
 
-        return x_padded, x_lengths, y_t_padded, y_d_padded, y_lengths, t_p, t_d
+        return x_padded, x_lengths, y_t_padded, y_d_padded, y_pi_padded, y_lengths, t_p, t_d, t_pi
 
     loader = torch.utils.data.DataLoader(dataset, batch_size = batch_size, num_workers = workers, shuffle=False, pin_memory=True, drop_last=True, collate_fn = collate_fn)
     return loader
@@ -75,9 +80,10 @@ class PhonemesDataset(torch.utils.data.IterableDataset):
                 phonemes = phonemes.split(' ')
                 parsed_phonemes = []
                 for p in phonemes:
-                    phoneme, d = p.split(',')
+                    phoneme, d, pitch = p.split(',')
                     d = int(d)
-                    parsed_phonemes.append((phoneme, d))
+                    pitch = int(pitch)
+                    parsed_phonemes.append((phoneme, d, pitch))
                 self.data.append((text, parsed_phonemes))
     
     def generate(self):
@@ -90,14 +96,15 @@ class PhonemesDataset(torch.utils.data.IterableDataset):
             x = torch.tensor([self.tokenizer.sequence_begin_token_id] + input_tokens + [self.tokenizer.sequence_end_token_id]).int()
 
             # Prepare output
-            y_p = torch.tensor([self.tokenizer.sequence_begin_token_id] + self.tokenizer.encode_phonemes([p for p, _ in phonemes]) + [self.tokenizer.sequence_end_token_id]).int()
-            y_d = torch.tensor([0] + [(d + 1) for _, d in phonemes] + [0]).int()
+            y_p = torch.tensor([self.tokenizer.sequence_begin_token_id] + self.tokenizer.encode_phonemes([p for p, _, _ in phonemes]) + [self.tokenizer.sequence_end_token_id]).int()
+            y_d = torch.tensor([0] + [(d + 1) for _, d, _ in phonemes] + [0]).int()
+            y_pi = torch.tensor([0] + [(pitch + 1) for _, _, pitch in phonemes] + [0]).int()
 
             # Check if sequence is too long
             if len(x) > self.max_sequence or len(y_p) > self.max_sequence:
                 continue
 
-            yield (x, y_d, y_p)
+            yield (x, y_d, y_p, y_pi)
     
     def __iter__(self):
         return iter(self.generate())

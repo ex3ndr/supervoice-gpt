@@ -29,7 +29,7 @@ from supervoice_gpt import SupervoiceGPT, Tokenizer, config
 from utils.datasets import create_dataset_loader
 
 # Train parameters
-train_experiment = "pre"
+train_experiment = "pitch"
 train_project="supervoice-gpt"
 train_auto_resume = True
 train_batch_size = 72 # Per GPU
@@ -158,20 +158,25 @@ def main():
                 with accelerator.autocast():
 
                     # Load batch
-                    x, x_lengths, y_p, y_d, y_lengths, t_p, t_d = next(train_cycle)
-                    # print("inputs")
-                    # print(t_p)
-                    # print(t_d)
-
+                    x, x_lengths, y_p, y_d, y_pi, y_lengths, t_p, t_d, t_pi = next(train_cycle)
+                    
                     # Forward
-                    predicted_t, predicted_d, loss = model(
+                    _, _, _, loss = model(
+
+                        # Inputs
                         input = x, 
                         input_lengths = x_lengths,
+
+                        # Outputs
                         output_tokens = y_p,
                         output_durations = y_d,
+                        output_pitches = y_pi,
                         output_lengths = y_lengths,
+
+                        # Targets
                         target_tokens = t_p,
-                        target_durations = t_d
+                        target_durations = t_d,
+                        target_pitches = t_pi
                     )
 
                     # if torch.isnan(loss).any():

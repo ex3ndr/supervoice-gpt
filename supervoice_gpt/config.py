@@ -5,7 +5,16 @@ config = dict_to_object({
     # Audio
     "audio": {
         # "token_duration": 256 / 24000 # 256 samples at 24kHz
-        "token_duration": 0.01 # To match the 100Hz token duration or Montreal Forced Aligner
+        "token_duration": 0.01, # To match the 100Hz token duration or Montreal Forced Aligner
+
+        # Pitch Normalization
+        "pitch_mean": 128,
+        "pitch_std": 128,
+
+        # Pitch Quantization
+        "pitch_min": -1,
+        "pitch_max": 1,
+        "pitch_buckets": 256
     },
 
     # Architecture
@@ -17,7 +26,9 @@ config = dict_to_object({
         "n_dim_head": 64,
         "n_dim_ffn": 2048,
 
-        "n_dim_duration": 256, # Should be less than n_dim
+        # n_dim_duration + n_dim_pitch should be less than n_dim
+        "n_dim_duration": 128,
+        "n_dim_pitch": 128,
 
         # Maximum duration values
         "max_duration": 100,

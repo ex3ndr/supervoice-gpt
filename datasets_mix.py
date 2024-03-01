@@ -13,6 +13,7 @@ from supervoice_gpt.normalize import normalize
 from supervoice_gpt import Tokenizer, config
 import sentencepiece as spm
 import multiprocessing
+import torch
 
 def process_segments_async(file):
     parts = Path(file).parts
@@ -45,15 +46,22 @@ def process_segments(collection, path):
     for word in data['w']:
         if word['w'] is not None:
             for phoneme in word['p']:
-                duration = min(phoneme['t'][1] - phoneme['t'][0], 1) # Clip duration to 1 second
+
+                # Extract phoneme
+                duration = min(phoneme['t'][1] - phoneme['t'][0], 1) # Clip duration to 1 second (actually ignored in previous stage)
+                p = phoneme['p'] if phoneme['p'] is not None else config.tokenizer.silence_token
+                pitch = phoneme['pitch'] if phoneme['pitch'] is not None else 0
+
+                # Write phoneme
+                phoneme_with_durations.append((p, duration, pitch))
+
+                # Persist statistics
                 if phoneme['p'] is not None:
                     known_phonemes[phoneme['p']] = max(known_phonemes.get(phoneme['p'], 0), round(duration / config.audio.token_duration))
-                    phoneme_with_durations.append((phoneme['p'], duration))
-                else:
-                    phoneme_with_durations.append((config.tokenizer.silence_token, duration))
         else:
-            duration = min(word['t'][1] - word['t'][0], 1) # Clip duration to 1 second
-            phoneme_with_durations.append((config.tokenizer.silence_token, duration))
+            # Silence between words
+            duration = min(word['t'][1] - word['t'][0], 1) # Clip duration to 1 second (actually ignored in previous stage)
+            phoneme_with_durations.append((config.tokenizer.silence_token, duration, 0))
 
     # Trim silence
     while len(phoneme_with_durations) > 0 and phoneme_with_durations[0][0] == config.tokenizer.silence_token:
@@ -61,32 +69,36 @@ def process_segments(collection, path):
     while len(phoneme_with_durations) > 0 and phoneme_with_durations[-1][0] == config.tokenizer.silence_token:
         phoneme_with_durations.pop(-1)
 
+
+    # Check for unknown tokens
+    if (config.tokenizer.unknown_token in text) or (config.tokenizer.unknown_token in format_durations(phoneme_with_durations)):
+        return None
+
     # GPT Training
-    output_train = [text + '｜' + format_durations_compact(phoneme_with_durations)]
+    output_train = [text + '｜' + format_durations_train(phoneme_with_durations)]
 
     # Tokenizer training
-    phonemes = format_durations(phoneme_with_durations)
     output_train_text = [text]
-    output_train_phonemes = [phonemes]
-    output_tokenizer = [text, phonemes]
 
-    # Check if unknown tokens are present
-    if (config.tokenizer.unknown_token in text) or (config.tokenizer.unknown_token in phonemes):
-        return None
-    
-    return output_train, output_train_text, output_train_phonemes, output_tokenizer, known_phonemes
+    # Results    
+    return output_train, output_train_text, known_phonemes
 
 def format_durations(phonemes):
     output = ''
-    for phoneme, duration in phonemes:
+    for phoneme, duration, pitch in phonemes:
         for i in range(round(duration / config.audio.token_duration)):
             output += phoneme
     return output
 
-def format_durations_compact(phonemes):
+def quntize_pitch(pitch):
+    qp = ((pitch - config.audio.pitch_min) / (config.audio.pitch_max - config.audio.pitch_min)) * config.audio.pitch_buckets
+    qp = max(0, min(config.audio.pitch_buckets - 1, int(qp)))
+    return qp
+
+def format_durations_train(phonemes):
     output = []
-    for phoneme, duration in phonemes:
-        output += ["" + phoneme + "," + str(round(duration / config.audio.token_duration)) + ""]
+    for phoneme, duration, pitch in phonemes:
+        output += ["" + phoneme + "," + str(round(duration / config.audio.token_duration)) + "," + str(quntize_pitch(pitch)) + ""]
     return " ".join(output)
 
 def format_tokens(src):
@@ -104,6 +116,16 @@ def extract_phonemes(collection, path):
 
     # Normalize
     text = text.lower().strip()
+
+    # Load pitch
+    pitch = torch.load('datasets/' + collection + "-prepared/" + path + ".f0.pt", map_location="cpu")
+
+    # Replace zero pitch with mean
+    pitch[pitch == 0] = config.audio.pitch_mean
+
+    # Normalize pitch
+    pitch = (pitch - config.audio.pitch_mean) / config.audio.pitch_std
+    pitch = torch.clamp(pitch, config.audio.pitch_min, config.audio.pitch_max)
 
     # Load textgrid
     tg = textgrid.TextGrid.fromFile('datasets/' + collection + "-aligned/" + path + ".TextGrid")
@@ -140,13 +162,25 @@ def extract_phonemes(collection, path):
         word_phonemes = []
         last_phone_time = 0
         for phone in phones:
+
+            # Add missing silence
             if phone.minTime != last_phone_time:
-                word_phonemes.append({'t': [last_phone_time + time_offset, phone.minTime + time_offset], 'p': None})
-            if phone.minTime >= word.minTime and phone.maxTime <= word.maxTime and phone.mark != "":
+                word_phonemes.append({'t': [last_phone_time + time_offset, phone.minTime + time_offset], 'p': None, 'pitch': None})
+            
+            # Add phone
+            if phone.minTime >= word.minTime and phone.maxTime <= word.maxTime and phone.mark != "": # Ignore empty phones since we added them above
+
+                # Start and end frames
+                start = round((phone.minTime + time_offset) / config.audio.token_duration)
+                end = round((phone.maxTime + time_offset) / config.audio.token_duration)
+
+                # Calculate average pitch
+                pt = pitch[start:end].mean().item()
+
                 m = phone.mark
                 if m == "spn":
                     m = config.tokenizer.unknown_token
-                word_phonemes.append({'t': [phone.minTime + time_offset, phone.maxTime + time_offset], 'p': m})
+                word_phonemes.append({'t': [phone.minTime + time_offset, phone.maxTime + time_offset], 'p': m, 'pitch': pt})
             last_phone_time = phone.maxTime
 
         # Processed word
@@ -160,7 +194,7 @@ def main():
     # Corpus
     print("Starting assembling text training corpus...")
     files = [] 
-    files += glob.glob("datasets/vctk-aligned/*/*.TextGrid") 
+    files += glob.glob("datasets/vctk-aligned/*/*.TextGrid")
     files += glob.glob("datasets/libritts-aligned/*/*.TextGrid")
     files += glob.glob("datasets/common-voice-en-aligned/*/*.TextGrid")
     files += glob.glob("datasets/common-voice-ru-aligned/*/*.TextGrid") 
@@ -170,34 +204,26 @@ def main():
     print("Processing files...")
     known_phonemes = {}
     file_text = open("datasets/train.txt", "w")
-    file_tok = open("datasets/train_tokenizer.txt", "w")
     file_tok_text = open("datasets/train_tokenizer_text.txt", "w")
-    file_tok_ph = open("datasets/train_tokenizer_phonemes.txt", "w")
     with multiprocessing.Manager() as manager:
         with multiprocessing.Pool(processes=16) as pool:
             for result in tqdm(pool.imap_unordered(process_segments_async, files, chunksize=32), total=len(files)):
                 if result is None:
                     continue
-                segments, segments_tokenizer_text, segments_tokenizer_ph, segments_tokenizer, kp = result
+                segments, segments_tokenizer_text, kp = result
                 for k, v in kp.items():
                     known_phonemes[k] = max(known_phonemes.get(k, 0), v)
                 for s in segments:
                     file_text.write(s + "\n")
-                for s in segments_tokenizer:
-                    file_tok.write(s + "\n")
                 for s in segments_tokenizer_text:
                     file_tok_text.write(s + "\n")
-                for s in segments_tokenizer_ph:
-                    file_tok_ph.write(s + "\n")
     with open("datasets/train_phonemes.txt", "w") as fp:
         for k, v in known_phonemes.items():
             fp.write(k + " " + str(v) + "\n")
 
     # Close files
     file_text.close()
-    file_tok.close()
     file_tok_text.close()
-    file_tok_ph.close()
 
     # Write vocab
     with open("./datasets/tokenizer_phonemes.vocab", "w") as vc:
