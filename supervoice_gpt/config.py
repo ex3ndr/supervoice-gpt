@@ -7,13 +7,9 @@ config = dict_to_object({
         # "token_duration": 256 / 24000 # 256 samples at 24kHz
         "token_duration": 0.01, # To match the 100Hz token duration or Montreal Forced Aligner
 
-        # Pitch Normalization
-        "pitch_mean": 128,
-        "pitch_std": 128,
-
         # Pitch Quantization
-        "pitch_min": -1,
-        "pitch_max": 1,
+        "pitch_min": 0,
+        "pitch_max": 7,
         "pitch_buckets": 256
     },
 

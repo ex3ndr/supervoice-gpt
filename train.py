@@ -29,7 +29,7 @@ from supervoice_gpt import SupervoiceGPT, Tokenizer, config
 from utils.datasets import create_dataset_loader
 
 # Train parameters
-train_experiment = "pitch"
+train_experiment = "pitch-2"
 train_project="supervoice-gpt"
 train_auto_resume = True
 train_batch_size = 72 # Per GPU

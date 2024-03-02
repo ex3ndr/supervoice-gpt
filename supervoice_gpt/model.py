@@ -151,7 +151,7 @@ class SupervoiceGPT(torch.nn.Module):
         for _ in range(max_new_tokens):
             
             # Forward the model to get the logits for the index in the sequence
-            logits_token, logits_duration, logits_pitch = self(input = ctx_input, output_tokens = ctx_output_tokens, output_durations = ctx_output_durations, output_pitch = ctx_output_pitch)
+            logits_token, logits_duration, logits_pitch = self(input = ctx_input, output_tokens = ctx_output_tokens, output_durations = ctx_output_durations, output_pitches = ctx_output_pitch)
             
             # Pluck the logits at the final step and scale by desired temperature
             logits_token = logits_token[:, -1, :] / temperature
@@ -200,10 +200,12 @@ class SupervoiceGPT(torch.nn.Module):
         pitches = (ctx_output_pitch.squeeze(0).cpu() - 1).tolist()
         tokens = tokens[1:]
         durations = durations[1:]
+        pitches = pitches[1:]
         if valid_exit:
             tokens = tokens[:-1]
             durations = durations[:-1]
-        return list(zip(tokens, durations))
+            pitches = pitches[:-1]
+        return list(zip(tokens, durations, pitches))
 
     def predict_next(self, input, output_tokens, output_durations, tokenizer, top_k = 10, device = "cpu"):
 

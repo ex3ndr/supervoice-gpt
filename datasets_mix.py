@@ -14,6 +14,7 @@ from supervoice_gpt import Tokenizer, config
 import sentencepiece as spm
 import multiprocessing
 import torch
+import math
 
 def process_segments_async(file):
     parts = Path(file).parts
@@ -38,6 +39,10 @@ def process_segments(collection, path):
     # Phoenemes
     known_phonemes = {}
 
+    # Pitch
+    max_pitch = 0.0
+    max_pitch_2 = 0.0
+
     # Text
     text = format_tokens(data['t'])
 
@@ -51,6 +56,10 @@ def process_segments(collection, path):
                 duration = min(phoneme['t'][1] - phoneme['t'][0], 1) # Clip duration to 1 second (actually ignored in previous stage)
                 p = phoneme['p'] if phoneme['p'] is not None else config.tokenizer.silence_token
                 pitch = phoneme['pitch'] if phoneme['pitch'] is not None else 0
+                max_pitch = max(max_pitch, pitch)
+                pitch = math.log(pitch + 1)
+                pitch =  max(config.audio.pitch_min, min(config.audio.pitch_max, pitch))
+                max_pitch_2 = max(max_pitch_2, pitch)
 
                 # Write phoneme
                 phoneme_with_durations.append((p, duration, pitch))
@@ -81,7 +90,7 @@ def process_segments(collection, path):
     output_train_text = [text]
 
     # Results    
-    return output_train, output_train_text, known_phonemes
+    return output_train, output_train_text, known_phonemes, max_pitch, max_pitch_2
 
 def format_durations(phonemes):
     output = ''
@@ -119,13 +128,6 @@ def extract_phonemes(collection, path):
 
     # Load pitch
     pitch = torch.load('datasets/' + collection + "-prepared/" + path + ".f0.pt", map_location="cpu")
-
-    # Replace zero pitch with mean
-    pitch[pitch == 0] = config.audio.pitch_mean
-
-    # Normalize pitch
-    pitch = (pitch - config.audio.pitch_mean) / config.audio.pitch_std
-    pitch = torch.clamp(pitch, config.audio.pitch_min, config.audio.pitch_max)
 
     # Load textgrid
     tg = textgrid.TextGrid.fromFile('datasets/' + collection + "-aligned/" + path + ".TextGrid")
@@ -165,17 +167,21 @@ def extract_phonemes(collection, path):
 
             # Add missing silence
             if phone.minTime != last_phone_time:
-                word_phonemes.append({'t': [last_phone_time + time_offset, phone.minTime + time_offset], 'p': None, 'pitch': None})
+
+                # Pitch
+                start = round((phone.minTime + time_offset) / config.audio.token_duration)
+                end = round((phone.maxTime + time_offset) / config.audio.token_duration)
+                pt = pitch[start:end].median().item()
+
+                word_phonemes.append({'t': [last_phone_time + time_offset, phone.minTime + time_offset], 'p': None, 'pitch': pt})
             
             # Add phone
             if phone.minTime >= word.minTime and phone.maxTime <= word.maxTime and phone.mark != "": # Ignore empty phones since we added them above
 
-                # Start and end frames
+                # Pitch
                 start = round((phone.minTime + time_offset) / config.audio.token_duration)
                 end = round((phone.maxTime + time_offset) / config.audio.token_duration)
-
-                # Calculate average pitch
-                pt = pitch[start:end].mean().item()
+                pt = pitch[start:end].median().item()
 
                 m = phone.mark
                 if m == "spn":
@@ -203,6 +209,8 @@ def main():
     # Process files
     print("Processing files...")
     known_phonemes = {}
+    max_pitch = 0.0
+    max_pitch_2 = 0.0
     file_text = open("datasets/train.txt", "w")
     file_tok_text = open("datasets/train_tokenizer_text.txt", "w")
     with multiprocessing.Manager() as manager:
@@ -210,9 +218,11 @@ def main():
             for result in tqdm(pool.imap_unordered(process_segments_async, files, chunksize=32), total=len(files)):
                 if result is None:
                     continue
-                segments, segments_tokenizer_text, kp = result
+                segments, segments_tokenizer_text, kp, mp, mp2 = result
                 for k, v in kp.items():
                     known_phonemes[k] = max(known_phonemes.get(k, 0), v)
+                max_pitch = max(max_pitch, mp)
+                max_pitch_2 = max(max_pitch_2, mp2)
                 for s in segments:
                     file_text.write(s + "\n")
                 for s in segments_tokenizer_text:
@@ -241,6 +251,8 @@ def main():
 
         # Write
         vc.write("[" + ",".join(items) + "]")
+
+    print("Max Pitch: " + str(max_pitch) + ", " + str(max_pitch_2))
         
 
 if __name__ == "__main__":
