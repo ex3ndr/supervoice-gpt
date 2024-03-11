@@ -39,11 +39,6 @@ def process_segments(collection, path):
     # Compute alignments
     aligned_phonemes = compute_alignments(config, tg, style, style.shape[0])
 
-    # Collect phonemes
-    known_phonemes = set()
-    for phoneme, duration, pitch in aligned_phonemes:
-        known_phonemes.add(phoneme)
-
     # Check for unknown tokens, or invalid durations
     for phoneme, duration, style in aligned_phonemes:
         if phoneme == config.tokenizer.unknown_token:
@@ -51,6 +46,11 @@ def process_segments(collection, path):
         if duration > 100: # ~1 second
             return None
     
+    # Collect phonemes
+    known_phonemes = set()
+    for phoneme, duration, pitch in aligned_phonemes:
+        known_phonemes.add(phoneme)
+
     # Trim silence
     while len(aligned_phonemes) > 0 and aligned_phonemes[0][0] == config.tokenizer.silence_token:
         aligned_phonemes.pop(0)
@@ -99,9 +99,6 @@ def main():
                     file_text.write(s + "\n")
                 for s in segments_tokenizer_text:
                     file_tok_text.write(s + "\n")
-    with open("datasets/train_phonemes.txt", "w") as fp:
-        for k, v in known_phonemes.items():
-            fp.write(k + " " + str(v) + "\n")
 
     # Close files
     file_text.close()
@@ -111,9 +108,9 @@ def main():
     with open("./datasets/tokenizer_phonemes.vocab", "w") as vc:
 
         # Collect tokens
-        items = [ "<pad>", "<s>", "</s>", config.tokenizer.silence_token]
+        items = [ "<pad>", "<s>", "</s>"]
         phon = []
-        for k, v in known_phonemes.items():
+        for k in known_phonemes:
             phon.append(k)
         phon.sort()
         items += phon
@@ -123,8 +120,6 @@ def main():
 
         # Write
         vc.write("[" + ",".join(items) + "]")
-
-    print("Max Pitch: " + str(max_pitch) + ", " + str(max_pitch_2))
         
 
 if __name__ == "__main__":

@@ -10,16 +10,16 @@ class SupervoiceGPT(torch.nn.Module):
         self.n_input_tokens = config.tokenizer.vocab_size
         self.n_output_tokens = len(config.tokenizer.vocab_output)
         self.n_durations = (config.gpt.max_duration + 1) + 1 # +1 Padding
-        self.n_pitches = config.audio.pitch_buckets + 1 # +1 Padding
+        self.n_pitches = config.tokenizer_style.tokens + 1 # +1 Padding
 
         # Embeddings
         self.input_embedding = torch.nn.Embedding(self.n_input_tokens, self.config.gpt.n_dim)
         torch.nn.init.normal_(self.input_embedding.weight, mean=0.0, std=0.02)
-        self.output_embedding_token = torch.nn.Embedding(self.n_output_tokens, self.config.gpt.n_dim - self.config.gpt.n_dim_duration - self.config.gpt.n_dim_pitch)
+        self.output_embedding_token = torch.nn.Embedding(self.n_output_tokens, self.config.gpt.n_dim)
         torch.nn.init.normal_(self.output_embedding_token.weight, mean=0.0, std=0.02)
-        self.output_embedding_pitch = torch.nn.Embedding(self.n_pitches, self.config.gpt.n_dim_pitch)
+        self.output_embedding_pitch = torch.nn.Embedding(self.n_pitches, self.config.gpt.n_dim)
         torch.nn.init.normal_(self.output_embedding_pitch.weight, mean=0.0, std=0.02)
-        self.output_embedding_duration = torch.nn.Embedding(self.n_durations, self.config.gpt.n_dim_duration)
+        self.output_embedding_duration = torch.nn.Embedding(self.n_durations, self.config.gpt.n_dim)
         torch.nn.init.normal_(self.output_embedding_duration.weight, mean=0.0, std=0.02)
 
         # Encoder Transformer
@@ -59,9 +59,9 @@ class SupervoiceGPT(torch.nn.Module):
         )
 
         # Prediction heads
-        self.prediction_head_token = torch.nn.Linear(self.config.gpt.n_dim - self.config.gpt.n_dim_duration - self.config.gpt.n_dim_pitch, self.n_output_tokens, bias=False)
-        self.prediction_head_pitch = torch.nn.Linear(self.config.gpt.n_dim_pitch, self.n_pitches, bias=False)
-        self.prediction_head_duration = torch.nn.Linear(self.config.gpt.n_dim_duration, self.n_durations, bias=False)
+        self.prediction_head_token = torch.nn.Linear(self.config.gpt.n_dim, self.n_output_tokens, bias=False)
+        self.prediction_head_pitch = torch.nn.Linear(self.config.gpt.n_dim, self.n_pitches, bias=False)
+        self.prediction_head_duration = torch.nn.Linear(self.config.gpt.n_dim, self.n_durations, bias=False)
 
         # Weight sharing
         self.output_embedding_token.weight = self.prediction_head_token.weight
@@ -113,7 +113,7 @@ class SupervoiceGPT(torch.nn.Module):
         output_tokens_embedded = self.output_embedding_token(output_tokens)
         output_durations_embedded = self.output_embedding_duration(output_durations)
         output_pitches_embedded = self.output_embedding_pitch(output_pitches)
-        output_embedded = torch.cat((output_tokens_embedded, output_durations_embedded, output_pitches_embedded), dim = -1)
+        output_embedded = output_tokens_embedded + output_durations_embedded + output_pitches_embedded
 
         # Run an encoder
         latents = self.encoder(input_embedded, mask = input_mask)
@@ -121,15 +121,10 @@ class SupervoiceGPT(torch.nn.Module):
         # Run an decoder
         decoded = self.decoder(latents, output_embedded, x_mask = input_mask, y_mask = output_mask, xy_mask = input_output_mask)
 
-        # Split the output into token and duration
-        decoded_token = decoded[:, :, :self.config.gpt.n_dim - self.config.gpt.n_dim_duration - self.config.gpt.n_dim_pitch]
-        decoded_duration = decoded[:, :, self.config.gpt.n_dim - self.config.gpt.n_dim_duration - self.config.gpt.n_dim_pitch: self.config.gpt.n_dim - self.config.gpt.n_dim_duration]
-        decoded_pitch = decoded[:, :, self.config.gpt.n_dim - self.config.gpt.n_dim_duration:]
-
         # Run prediction head
-        predicted_token = self.prediction_head_token(decoded_token)
-        predicted_duration = self.prediction_head_duration(decoded_duration)
-        predicted_pitch = self.prediction_head_pitch(decoded_pitch)
+        predicted_token = self.prediction_head_token(decoded[:, :, :self.config.gpt.n_dim])
+        predicted_duration = self.prediction_head_duration(decoded[:, :, :self.config.gpt.n_dim])
+        predicted_pitch = self.prediction_head_pitch(decoded[:, :, :self.config.gpt.n_dim])
 
         # Compute loss if targets are provided
         if target_tokens is not None and target_durations is not None and target_pitches is not None:
@@ -160,6 +155,11 @@ class SupervoiceGPT(torch.nn.Module):
 
             # Truncate the logits to only having generate tokens
             # logits = logits[:, :self.n_generate_tokens]
+
+            # Remove padding values
+            logits_token[:, 0] = -float('Inf')
+            logits_duration[:, 0] = -float('Inf')
+            logits_pitch[:, 0] = -float('Inf')
             
             # Optionally crop the logits to only the top k options
             if top_k is not None:

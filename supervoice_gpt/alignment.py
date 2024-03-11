@@ -21,15 +21,52 @@ def extract_textgrid_alignments(tg):
     """
     Converts a TextGrid object to a list of tuples (phoneme, start, end)
     """
+
+
     output = []
-    for t in tg[1]:
-        ends = t.maxTime
-        tok = t.mark
-        if tok == '': # Ignore spaces
+    last_phone_time = 0
+    first_word = True
+
+    # Iterate each word
+    for word in tg[0]:
+
+        # Ignore empty words
+        if word.mark == "":
             continue
-        if tok == 'spn':
-            tok = '<UNK>'
-        output.append((tok, t.minTime, t.maxTime))
+
+        # Add silence between words
+        if not first_word:
+            output.append(("<SIL>", last_phone_time, word.minTime))
+            last_phone_time = word.minTime
+        first_word = False
+
+        # Iterate each phoneme
+        for phone in tg[1]:
+
+            # Ignore phones that are in the past
+            if phone.minTime < last_phone_time:
+                continue
+
+            # Stop if we are in the future
+            if phone.minTime >= word.maxTime:
+                break
+
+            # Ignore empty phonemes
+            if phone.mark == "":
+                continue
+
+            # Add silence between phonemes
+            if phone.minTime != last_phone_time:
+                output.append(("<SIL>", last_phone_time, phone.minTime))
+                last_phone_time = phone.minTime
+            
+            # Append Phoneme
+            m = phone.mark
+            if m == "spn":
+                m = "<UNK>"
+            output.append((m, phone.minTime, phone.maxTime))
+            last_phone_time = phone.maxTime
+
     return output
 
 def quantisize_phoneme_positions(src, phoneme_duration):
@@ -79,7 +116,7 @@ def compute_alignments(config, tg, style, total_duration):
     x = continious_phonemes_to_discreete(x, phoneme_duration)
 
     # Trim empty
-    x = [i for i in x if i[1] > 0]
+    # x = [i for i in x if i[1] > 0]
 
     # Pad with silence
     total_length = sum([i[1] for i in x])
