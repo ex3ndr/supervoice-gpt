@@ -29,12 +29,12 @@ from supervoice_gpt import SupervoiceGPT, Tokenizer, config
 from utils.datasets import create_dataset_loader
 
 # Train parameters
-train_experiment = "pre"
+train_experiment = "pre_new_style"
 train_project="supervoice-gpt"
 train_auto_resume = True
 train_batch_size = 72 # Per GPU
 train_sequence_length = 256
-train_grad_accum_every = 8
+train_grad_accum_every = 4 # Simulate 8 gpus using 2 gpus
 train_steps = 600000
 train_loader_workers = 8
 train_log_every = 1
