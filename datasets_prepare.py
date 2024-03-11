@@ -11,6 +11,7 @@ import csv
 from pathlib import Path
 from tqdm import tqdm
 from utils.audio import load_mono_audio, init_if_needed, trim_silence
+from supervoice_gpt.model_style import export_style
 import pyworld as pw
 
 #
@@ -45,17 +46,16 @@ def execute_parallel(args):
     target_name = str(index).zfill(8)
 
     # Load audio
-    waveform = load_mono_audio(file, 16000, device=device)
+    waveform = load_mono_audio(file, config.audio.sample_rate, device=device)
 
     # Trim silence
-    waveform = trim_silence(waveform, 16000)
+    waveform = trim_silence(waveform, config.audio.sample_rate)
 
     # Move to CPU
     waveform = waveform.cpu()
 
-    # Predict pitch
-    f0, t = pw.dio(waveform.numpy().astype('double'), 16000, frame_period=(1000 * 160)/16000) # 1000ms * (hop/sample_rate)
-    f0 = torch.tensor(f0)
+    # Export style
+    f0 = export_style(config, waveform)
 
     # Clean up text
     for symbol in CLEANUP_SYMBOLS:
