@@ -12,7 +12,9 @@ from pathlib import Path
 from tqdm import tqdm
 from utils.audio import load_mono_audio, init_if_needed, trim_silence
 from supervoice_gpt.model_style import export_style
+from supervoice_gpt.config import config
 import pyworld as pw
+import shutil
 
 #
 # Parameters
@@ -39,7 +41,7 @@ def speaker_directory(speaker):
 def execute_parallel(args):
     process_id = multiprocessing.current_process()._identity[0]
     files, collection_dir, index = args
-    file, text, speaker = files[index]
+    file, text, speaker, alignment = files[index]
     device = "cuda:" + str(process_id % torch.cuda.device_count())
 
     # Format filename from index (e.g. 000001)
@@ -49,7 +51,8 @@ def execute_parallel(args):
     waveform = load_mono_audio(file, config.audio.sample_rate, device=device)
 
     # Trim silence
-    waveform = trim_silence(waveform, config.audio.sample_rate)
+    if not alignment:
+        waveform = trim_silence(waveform, config.audio.sample_rate)
 
     # Move to CPU
     waveform = waveform.cpu()
@@ -65,11 +68,17 @@ def execute_parallel(args):
 
     # Save
     target_dir = os.path.join(collection_dir, speaker_directory(speaker))
-    torchaudio.save(os.path.join(target_dir, target_name + ".wav"), waveform.unsqueeze(0), 16000)
+    if not alignment:
+        torchaudio.save(os.path.join(target_dir, target_name + ".wav"), waveform.unsqueeze(0), 16000)
     with open(os.path.join(target_dir, target_name + ".txt"), "w", encoding="utf-8") as f:
         f.write(text)
     torch.save(f0, os.path.join(target_dir, target_name + ".f0.pt"))
-    
+
+def copy_parallel(args):
+    files, from_dir, to_dir, index = args
+    file, speaker = files[index]
+    target_name = str(index).zfill(8) + ".TextGrid"
+    shutil.copy(os.path.join(from_dir, file), os.path.join(to_dir, speaker_directory(speaker), target_name))
 
 
 def load_vctk_corpus():
@@ -100,11 +109,11 @@ def load_vctk_corpus():
             speaker = speakers[speaker]
 
             # Append
-            files.append((file, text, speaker))
+            files.append((file, text, speaker, False))
         else:
             print("Strange filename:", filename)    
 
-    return { 'files': files, 'speakers': speakers }
+    return { 'files': files, 'speakers': speakers, 'preprocessed': [], 'preprocessed_base': None }
 
 def load_libritts_corpus(collections):
     files = []
@@ -164,9 +173,9 @@ def load_libritts_corpus(collections):
         speaker = speakers[speaker]
 
         # Append
-        files.append((file, text, speaker))
+        files.append((file, text, speaker, False))
 
-    return { 'files': files, 'speakers': speakers }
+    return { 'files': files, 'speakers': speakers, 'preprocessed': [], 'preprocessed_base': None }
 
 def load_common_voice_corpus(path):
     files = []
@@ -190,9 +199,38 @@ def load_common_voice_corpus(path):
         speaker = speakers[speaker]
 
         # Append
-        files.append((file, text, speaker))
+        files.append((file, text, speaker, False))
 
-    return { 'files': files, 'speakers': speakers }
+    return { 'files': files, 'speakers': speaker, 'preprocessed': [], 'preprocessed_base': None }
+
+def load_preprocessed_corpus(path):
+    files = []
+    speakers = {}
+    preprocessed = []
+
+    # Read all lines from index
+    with open(os.path.join(path, "files_valid.txt") , "r") as f:
+        file_list = f.readlines()
+        file_list = [x.strip() for x in file_list]
+
+    # Extract files and speakers
+    for row in file_list:
+        file = path + row + ".flac"
+        text_file = path + row + ".txt"
+        with open(text_file, "r") as f:
+            text = f.read()
+        speaker = "pr_" + str(Path(row).parts[0])
+
+        # Extract speaker
+        if speaker not in speakers:
+            speakers[speaker] = len(speakers)
+        speaker = speakers[speaker]
+
+        # Append
+        files.append((file, text, speaker, True))
+        preprocessed.append((row + ".TextGrid", speaker))
+
+    return { 'files': files, 'speakers': speakers, 'preprocessed': preprocessed, 'preprocessed_base': path }
 
 def execute_run():
 
@@ -205,6 +243,8 @@ def execute_run():
     collections['common-voice-en'] = load_common_voice_corpus("external_datasets/common-voice-16.0-en/en")
     collections['common-voice-ru'] = load_common_voice_corpus("external_datasets/common-voice-16.0-ru/ru")
     collections['common-voice-uk'] = load_common_voice_corpus("external_datasets/common-voice-16.0-uk/uk")
+    collections['librilight'] = load_preprocessed_corpus("external_datasets/librilight-processed/")
+    collections['librilight-medium'] = load_preprocessed_corpus("external_datasets/librilight-medium-processed/")
     init_if_needed()
 
     # Process collections
@@ -213,24 +253,46 @@ def execute_run():
         name = collection
         files = collections[collection]['files']
         speakers = collections[collection]['speakers']
+        preprocessed = collections[collection]['preprocessed']
+        preprocessed_base = collections[collection]['preprocessed_base']
         prepared_dir = "datasets/" + name + "-prepared/"
+        aligned_dir = "datasets/" + name + "-aligned/"
 
         # Check if exists
         if Path(prepared_dir).exists():
             print(f"Collection {name} already prepared")
-            continue
+        else:
 
-        # Creating directories
-        for speaker in speakers:
-            Path(prepared_dir + speaker_directory(speakers[speaker])).mkdir(parents=True, exist_ok=True)
+            # Creating directories
+            for speaker in speakers:
+                Path(prepared_dir + speaker_directory(speakers[speaker])).mkdir(parents=True, exist_ok=True)
 
-        # Process files
-        with multiprocessing.Manager() as manager:
-            files = manager.list(files)
-            args_list = [(files, prepared_dir, i) for i in range(len(files))]
-            with multiprocessing.Pool(processes=PARAM_WORKERS) as pool:
-                for result in tqdm(pool.imap_unordered(execute_parallel, args_list, chunksize=32), total=len(files)):
-                    pass
+            # Process files
+            with multiprocessing.Manager() as manager:
+                files = manager.list(files)
+                args_list = [(files, prepared_dir, i) for i in range(len(files))]
+                with multiprocessing.Pool(processes=PARAM_WORKERS) as pool:
+                    for result in tqdm(pool.imap_unordered(execute_parallel, args_list, chunksize=32), total=len(files)):
+                        pass
+
+        # Copy alignment files
+        if len(preprocessed) > 0:
+
+            # Check if exists
+            if Path(aligned_dir).exists():
+                print(f"Collection alignments {name} already prepared")
+            else:
+                # Creating directories
+                for speaker in speakers:
+                    Path(aligned_dir + speaker_directory(speakers[speaker])).mkdir(parents=True, exist_ok=True)
+
+                # Copy files
+                with multiprocessing.Manager() as manager:
+                    files = manager.list(preprocessed)
+                    args_list = [(files, preprocessed_base, aligned_dir, i) for i in range(len(files))]
+                    with multiprocessing.Pool(processes=PARAM_WORKERS) as pool:
+                        for result in tqdm(pool.imap_unordered(copy_parallel, args_list, chunksize=32), total=len(args_list)):
+                            pass
 
     # End
     print("Done")

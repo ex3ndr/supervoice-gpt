@@ -82,6 +82,8 @@ def main():
     files += glob.glob("datasets/common-voice-en-aligned/*/*.TextGrid")
     files += glob.glob("datasets/common-voice-ru-aligned/*/*.TextGrid") 
     files += glob.glob("datasets/common-voice-uk-aligned/*/*.TextGrid")
+    files += glob.glob("datasets/librilight-aligned/*/*.TextGrid")
+    files += glob.glob("datasets/librilight-medium-aligned/*/*.TextGrid")
     
     # Process files
     print("Processing files...")
