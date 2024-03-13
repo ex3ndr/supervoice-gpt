@@ -13,11 +13,11 @@ config = dict_to_object({
     # Architecture
     "gpt": {
         "n_embeddings": 512,
-        "n_heads": 8,
-        "n_layers": 8,
+        "n_heads": 16,
+        "n_layers": 16,
         "n_dim": 512,
-        "n_dim_head": 64,
-        "n_dim_ffn": 2048,
+        "n_dim_head": 32, # n_dim / n_heads
+        "n_dim_ffn": 32 * 4, # 4 * n_dim_head
 
         # # n_dim_duration + n_dim_pitch should be less than n_dim
         # "n_dim_duration": 128,

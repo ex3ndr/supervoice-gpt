@@ -390,6 +390,7 @@ def get_slopes_power_of_2(n_heads, device):
         slopes_cache[key] = torch.tensor([start*ratio**i for i in range(n_heads)], requires_grad=False, device = device) * -1
     return slopes_cache[key]
 
+alibi_do_cache = False
 alibi_cache = {}
 def get_alibi_mask(seq_len, n_heads, casual, device):
     global alibi_cache
@@ -407,8 +408,9 @@ def get_alibi_mask(seq_len, n_heads, casual, device):
             # Make top right triangle of the matrix to be -inf
             top_triangle_mask = torch.triu(torch.ones(seq_len, seq_len, device = device), diagonal = 1).bool()
             alibi = alibi.masked_fill(top_triangle_mask.unsqueeze(0).unsqueeze(0), float('-inf'))
-        
-        alibi_cache[key] = alibi
+        if alibi_do_cache:
+            alibi_cache[key] = alibi
+        return alibi
 
     return alibi_cache[key]
 

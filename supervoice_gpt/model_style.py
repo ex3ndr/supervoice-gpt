@@ -31,9 +31,9 @@ def resolve_style(config, src, durations):
 
         # Calculate pitch
         if start == end:
-            value = src[start:start+1].item()
+            value = src[start].item()
         else:
-            value = src[start:end+1].mean().item()
+            value = src[start:end].mean().item()
         value = ((value - config.tokenizer_style.pitch_min) / (config.tokenizer_style.pitch_max - config.tokenizer_style.pitch_min)) * config.tokenizer_style.tokens
         value = max(0, min(config.tokenizer_style.tokens - 1, int(value)))
 
