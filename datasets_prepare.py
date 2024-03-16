@@ -42,7 +42,7 @@ def execute_parallel(args):
     process_id = multiprocessing.current_process()._identity[0]
     files, collection_dir, index = args
     file, text, speaker, alignment = files[index]
-    device = "cuda:" + str(process_id % torch.cuda.device_count())
+    device = "cpu" if alignment else "cuda:" + str(process_id % torch.cuda.device_count())
 
     # Format filename from index (e.g. 000001)
     target_name = str(index).zfill(8)
@@ -271,7 +271,7 @@ def execute_run():
             with multiprocessing.Manager() as manager:
                 files = manager.list(files)
                 args_list = [(files, prepared_dir, i) for i in range(len(files))]
-                with multiprocessing.Pool(processes=PARAM_WORKERS) as pool:
+                with multiprocessing.Pool(processes=PARAM_WORKERS if len(preprocessed) == 0 else multiprocessing.cpu_count()) as pool:
                     for result in tqdm(pool.imap_unordered(execute_parallel, args_list, chunksize=32), total=len(files)):
                         pass
 
@@ -290,7 +290,7 @@ def execute_run():
                 with multiprocessing.Manager() as manager:
                     files = manager.list(preprocessed)
                     args_list = [(files, preprocessed_base, aligned_dir, i) for i in range(len(files))]
-                    with multiprocessing.Pool(processes=PARAM_WORKERS) as pool:
+                    with multiprocessing.Pool(processes=multiprocessing.cpu_count()) as pool:
                         for result in tqdm(pool.imap_unordered(copy_parallel, args_list, chunksize=32), total=len(args_list)):
                             pass
 

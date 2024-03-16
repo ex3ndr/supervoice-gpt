@@ -97,7 +97,7 @@ def continious_phonemes_to_discreete(raw_phonemes, phoneme_duration):
     quantisized = quantisize_phoneme_positions(raw_phonemes, phoneme_duration)
 
     # Convert to intervals
-    intervals = [(i[0], i[2] - i[1]) for i in quantisized]
+    intervals = [(i[0], (i[2] - i[1])) for i in quantisized]
 
     return intervals
 

@@ -77,13 +77,13 @@ def main():
     # Corpus
     print("Starting assembling text training corpus...")
     files = [] 
-    files += glob.glob("datasets/vctk-aligned/*/*.TextGrid")
-    files += glob.glob("datasets/libritts-aligned/*/*.TextGrid")
-    files += glob.glob("datasets/common-voice-en-aligned/*/*.TextGrid")
-    files += glob.glob("datasets/common-voice-ru-aligned/*/*.TextGrid") 
-    files += glob.glob("datasets/common-voice-uk-aligned/*/*.TextGrid")
-    files += glob.glob("datasets/librilight-aligned/*/*.TextGrid")
-    files += glob.glob("datasets/librilight-medium-aligned/*/*.TextGrid")
+    files += sorted(glob.glob("datasets/vctk-aligned/*/*.TextGrid"))
+    files += sorted(glob.glob("datasets/libritts-aligned/*/*.TextGrid"))
+    files += sorted(glob.glob("datasets/common-voice-en-aligned/*/*.TextGrid"))
+    files += sorted(glob.glob("datasets/common-voice-ru-aligned/*/*.TextGrid"))
+    files += sorted(glob.glob("datasets/common-voice-uk-aligned/*/*.TextGrid"))
+    files += sorted(glob.glob("datasets/librilight-aligned/*/*.TextGrid"))
+    files += sorted(glob.glob("datasets/librilight-medium-aligned/*/*.TextGrid"))
     
     # Process files
     print("Processing files...")
@@ -92,7 +92,7 @@ def main():
     file_tok_text = open("datasets/train_tokenizer_text.txt", "w")
     with multiprocessing.Manager() as manager:
         with multiprocessing.Pool(processes=16) as pool:
-            for result in tqdm(pool.imap_unordered(process_segments_async, files, chunksize=32), total=len(files)):
+            for result in tqdm(pool.imap(process_segments_async, files, chunksize=32), total=len(files)):
                 if result is None:
                     continue
                 segments, segments_tokenizer_text, kp = result
