@@ -8,7 +8,7 @@ def phonemizer():
     from supervoice_gpt import SupervoiceGPT, Tokenizer, config
 
     # Model
-    tokenizer = Tokenizer(config, "tokenizer_text.model")
+    tokenizer = Tokenizer(config, os.path.join(os.path.dirname(__file__), tokenizer_text.model))
     model = SupervoiceGPT(config)
     checkpoint = torch.hub.load_state_dict_from_url("https://github.com/ex3ndr/supervoice-gpt/releases/download/v0.0.1/supervoice_gpt_pitch_255000.pt", map_location="cpu")
     model.load_state_dict(checkpoint['model'])
