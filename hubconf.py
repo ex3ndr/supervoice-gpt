@@ -7,15 +7,8 @@ def phonemizer():
     import os
     from supervoice_gpt import SupervoiceGPT, Tokenizer, config
 
-    # Download
-    hub_dir = torch.hub.get_dir()
-    model_dir = os.path.join(hub_dir, 'checkpoints', 'supervoice-gpt-1-tokenizer.model')
-    torch.hub.download_url_to_file("https://shared.korshakov.com/models/supervoice-gpt-1-tokenizer.model", model_dir)
-
-    # Tokenizer
-    tokenizer = Tokenizer(config, model_dir)
-
     # Model
+    tokenizer = Tokenizer(config, "tokenizer_text.model")
     model = SupervoiceGPT(config)
     checkpoint = torch.hub.load_state_dict_from_url("https://github.com/ex3ndr/supervoice-gpt/releases/download/v0.0.1/supervoice_gpt_pitch_255000.pt")
     model.load_state_dict(checkpoint['model'])
