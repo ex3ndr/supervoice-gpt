@@ -29,21 +29,21 @@ from supervoice_gpt import SupervoiceGPT, Tokenizer, config
 from utils.datasets import create_dataset_loader
 
 # Train parameters
-train_experiment = "pre_new_style"
+train_experiment = "big_dataset"
 train_project="supervoice-gpt"
 train_auto_resume = True
-train_batch_size = 72 # Per GPU
+train_batch_size = 48 # Per GPU
 train_sequence_length = 256
 train_grad_accum_every = 4 # Simulate 8 gpus using 2 gpus
 train_steps = 600000
-train_loader_workers = 8
+train_loader_workers = 2
 train_log_every = 1
 train_save_every = 1000
 train_watch_every = 1000
 train_evaluate_every = 200
 train_evaluate_batches = 10
 train_lr_start = 1e-7
-train_lr_max = 2e-5
+train_lr_max = 2e-4
 train_warmup_steps = 5000
 train_mixed_precision = "fp16" # "bf16" or "fp16" or None
 train_clip_grad_norm = 0.2
@@ -158,20 +158,25 @@ def main():
                 with accelerator.autocast():
 
                     # Load batch
-                    x, x_lengths, y_p, y_d, y_lengths, t_p, t_d = next(train_cycle)
-                    # print("inputs")
-                    # print(t_p)
-                    # print(t_d)
-
+                    x, x_lengths, y_p, y_d, y_pi, y_lengths, t_p, t_d, t_pi = next(train_cycle)
+                    
                     # Forward
-                    predicted_t, predicted_d, loss = model(
+                    _, _, _, loss = model(
+
+                        # Inputs
                         input = x, 
                         input_lengths = x_lengths,
+
+                        # Outputs
                         output_tokens = y_p,
                         output_durations = y_d,
+                        output_pitches = y_pi,
                         output_lengths = y_lengths,
+
+                        # Targets
                         target_tokens = t_p,
-                        target_durations = t_d
+                        target_durations = t_d,
+                        target_pitches = t_pi
                     )
 
                     # if torch.isnan(loss).any():
