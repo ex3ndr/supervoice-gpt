@@ -17,7 +17,7 @@ def phonemizer():
 
     # Model
     model = SupervoiceGPT(config)
-    checkpoint = torch.hub.load_state_dict_from_url("https://shared.korshakov.com/models/supervoice-gpt-1.pt")
+    checkpoint = torch.hub.load_state_dict_from_url("https://github.com/ex3ndr/supervoice-gpt/releases/download/v0.0.1/supervoice_gpt_pitch_255000.pt")
     model.load_state_dict(checkpoint['model'])
     model.eval()
 
