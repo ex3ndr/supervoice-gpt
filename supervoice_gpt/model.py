@@ -4,13 +4,14 @@ from .transformer import Transformer, TransformerAdvanced
 from .masks import create_padding_mask, create_padding_casual_mask, create_padding_rectangle_mask
 
 class SupervoiceGPT(torch.nn.Module):
-    def __init__(self, config):
+    def __init__(self, tokenizer, config):
         super(SupervoiceGPT, self).__init__()
         self.config = config
         self.n_input_tokens = config.tokenizer.vocab_size
         self.n_output_tokens = len(config.tokenizer.vocab_output)
         self.n_durations = (config.gpt.max_duration + 1) + 1 # +1 Padding
         self.n_pitches = config.tokenizer_style.tokens + 1 # +1 Padding
+        self.tokenizer = tokenizer
 
         # Embeddings
         self.input_embedding = torch.nn.Embedding(self.n_input_tokens, self.config.gpt.n_dim)
@@ -137,13 +138,34 @@ class SupervoiceGPT(torch.nn.Module):
         return predicted_token, predicted_duration, predicted_pitch
 
     @torch.no_grad()
-    def generate(self, input, tokenizer, max_new_tokens = 128, temperature=1.0, top_k=None, deterministic = False, device="cpu"):
-        ctx_input = torch.tensor([tokenizer.sequence_begin_token_id] + tokenizer.encode(input) + [tokenizer.sequence_end_token_id], device = device).unsqueeze(0)
-        ctx_output_tokens = torch.tensor([tokenizer.sequence_begin_token_id], device = device).unsqueeze(0)
-        ctx_output_durations = torch.tensor([0], device = device).unsqueeze(0)
-        ctx_output_pitch = torch.tensor([0], device = device).unsqueeze(0)
+    def generate(self, input, conditioning = None, max_new_tokens = 1024, temperature=1.0, top_k = 5, deterministic = False, trim_conditioning_pause = True):
+
+        # Conditioning
+        full_input = input
+        initial_output = [(self.tokenizer.sequence_begin_token_id, 0, 0)]
+        if conditioning is not None:
+            cond_text, cond_tokens = conditioning
+            full_input = cond_text + ' ' + input
+            for token, duration, pitch in cond_tokens:
+                encoded_token = self.tokenizer.encode_phonemes([token])[0]
+                if encoded_token < 3:
+                    raise ValueError('Conditioning tokens should not contain special tokens')
+                initial_output.append((encoded_token, duration + 1, pitch + 1))
+        initial_output_tokens = [x[0] for x in initial_output]
+        initial_output_durations = [x[1] for x in initial_output]
+        initial_output_pitch = [x[2] for x in initial_output]
+
+        # Context
+        device = next(self.parameters()).device
+        ctx_input = torch.tensor([self.tokenizer.sequence_begin_token_id] + self.tokenizer.encode(full_input) + [self.tokenizer.sequence_end_token_id], device = device).unsqueeze(0)
+        ctx_output_tokens = torch.tensor(initial_output_tokens, device = device).unsqueeze(0)
+        ctx_output_durations = torch.tensor(initial_output_durations, device = device).unsqueeze(0)
+        ctx_output_pitch = torch.tensor(initial_output_pitch, device = device).unsqueeze(0)
+
+        # Output
+        output = []
         valid_exit = False
-        for _ in range(max_new_tokens):
+        for i in range(max_new_tokens):
             
             # Forward the model to get the logits for the index in the sequence
             logits_token, logits_duration, logits_pitch = self(input = ctx_input, output_tokens = ctx_output_tokens, output_durations = ctx_output_durations, output_pitches = ctx_output_pitch)
@@ -184,6 +206,10 @@ class SupervoiceGPT(torch.nn.Module):
                 idx_next_token = torch.multinomial(probs_token, num_samples=1)
                 idx_next_duration = torch.multinomial(probs_duration, num_samples=1)
                 idx_next_pitch = torch.multinomial(probs_pitch, num_samples=1)
+
+            # Force silence in first token if conditioned
+            if conditioning is not None and i == 0:
+                idx_next_token = torch.tensor([self.tokenizer.silence_token_id], device = device).unsqueeze(0)
             
             # Append Context
             ctx_output_tokens = torch.cat((ctx_output_tokens, idx_next_token), dim=1)
@@ -191,27 +217,23 @@ class SupervoiceGPT(torch.nn.Module):
             ctx_output_pitch = torch.cat((ctx_output_pitch, idx_next_pitch), dim=1)
 
             # Stop Tokens
-            if idx_next_token == tokenizer.sequence_end_token_id:
+            if idx_next_token == self.tokenizer.sequence_end_token_id:
                 valid_exit = True
                 break
 
-        tokens = tokenizer.decode_phonemes(ctx_output_tokens.squeeze(0).cpu().tolist())
-        durations = (ctx_output_durations.squeeze(0).cpu() - 1).tolist()
-        pitches = (ctx_output_pitch.squeeze(0).cpu() - 1).tolist()
-        tokens = tokens[1:]
-        durations = durations[1:]
-        pitches = pitches[1:]
-        if valid_exit:
-            tokens = tokens[:-1]
-            durations = durations[:-1]
-            pitches = pitches[:-1]
-        return list(zip(tokens, durations, pitches))
+            # Append to output
+            if conditioning is not None and i == 0 and trim_conditioning_pause:
+                continue # Skip first silence if needed
+            output.append((self.tokenizer.decode_phonemes([idx_next_token.item()])[0], idx_next_duration[0].item() - 1, idx_next_pitch[0].item() - 1))
 
-    def predict_next(self, input, output_tokens, output_durations, tokenizer, top_k = 10, device = "cpu"):
+        return {'output': output, 'completed': valid_exit}
+
+    def predict_next(self, input, output_tokens, output_durations, top_k = 10):
 
         # Context
-        ctx_input = torch.tensor([tokenizer.sequence_begin_token_id] + tokenizer.encode(input) + [tokenizer.sequence_end_token_id], device = device).unsqueeze(0)
-        ctx_output_tokens = torch.tensor([tokenizer.sequence_begin_token_id] + tokenizer.encode_phonemes(output_tokens), device = device).unsqueeze(0)
+        device = next(self.parameters()).device
+        ctx_input = torch.tensor([self.tokenizer.sequence_begin_token_id] + self.tokenizer.encode(input) + [self.tokenizer.sequence_end_token_id], device = device).unsqueeze(0)
+        ctx_output_tokens = torch.tensor([self.tokenizer.sequence_begin_token_id] + self.tokenizer.encode_phonemes(output_tokens), device = device).unsqueeze(0)
         ctx_output_durations = torch.tensor([0] + output_durations, device = device).unsqueeze(0)
 
         # Predict next token
@@ -227,7 +249,7 @@ class SupervoiceGPT(torch.nn.Module):
         # Get top k
         probs_token, indices = torch.topk(probs_token, top_k)
         
-        return probs_token.cpu().tolist(), tokenizer.decode_phonemes(indices.cpu().tolist())
+        return probs_token.cpu().tolist(), self.tokenizer.decode_phonemes(indices.cpu().tolist())
 
     def encode(self, *, input):
         input = input.unsqueeze(0)

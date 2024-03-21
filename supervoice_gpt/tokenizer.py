@@ -17,19 +17,17 @@ class Tokenizer:
         self.sp = spm.SentencePieceProcessor()
         self.sp.load(path)
 
-        # IDs
-        self.pad_token_id = self.sp.piece_to_id(self.pad_token)
-        self.silence_token_id = self.sp.piece_to_id(self.silence_token)
-        self.unknown_token_id = self.sp.piece_to_id(self.unknown_token)
-        self.sequence_begin_token_id = self.sp.piece_to_id(self.sequence_begin_token)
-        self.sequence_end_token_id = self.sp.piece_to_id(self.sequence_end_token)
-
         # Phoneme map
         self.phoneme_to_id = {}
         self.id_to_phoneme = {}
         for p in range(len(config.tokenizer.vocab_output)):
             self.phoneme_to_id[config.tokenizer.vocab_output[p]] = p
             self.id_to_phoneme[p] = config.tokenizer.vocab_output[p]
+
+        # IDs
+        self.silence_token_id = self.phoneme_to_id[self.silence_token]
+        self.sequence_begin_token_id = self.sp.piece_to_id(self.sequence_begin_token)
+        self.sequence_end_token_id = self.sp.piece_to_id(self.sequence_end_token)
 
     def encode(self, text):
 
